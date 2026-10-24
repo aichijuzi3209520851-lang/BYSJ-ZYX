@@ -2,14 +2,24 @@
   ******************************************************************************
   * @file    System/usart.c
   * @brief   串口驱动实现(USART1 / USART3)
-  * @version V1.0
-  * @date    2026-09-20
+  * @author  周颖暄
+  * @version V2.0
+  * @date    2026-10-25
   * @note    USART1: PA9(TX)/PA10(RX); USART3: PB10(TX)/PB11(RX); 8N1, 波特率9600
-  *          printf 重定向到 USART1(禁用半主机模式)
+  *          printf 重定向到 USART1(禁用半主机模式, fputc阻塞式发送)
   *          中断接收: 以 0x0D 0x0A(回车换行) 作为一帧结束标志
+  *
+  *          !!! FreeRTOS 版接收链路(交接必读) !!!
+  *          帧状态机在 ISR 内完成(帧标志位域图见下方变量定义处);
+  *          RTOS 态帧完成瞬间即调用 USART_DispatchCommand() 把命令拷贝进
+  *          CmdMsg_t 并 xQueueSendFromISR 直投通信任务——不等主循环轮询,
+  *          命令响应毫秒级。队列未创建前(启动瞬间)帧被安全丢弃。
+  *          中断优先级必须 >= configMAX_SYSCALL_INTERRUPT_PRIORITY(=5),
+  *          本工程取 6, 否则 FromISR 调用会触发 configASSERT 硬错误。
   ******************************************************************************
   * @history
   *   V1.0  2026-09-20  首次发布(注释规范化)
+  *   V2.0  2026-10-25  RTOS化: ISR直投命令队列/优先级6/双态编译(USE_FREERTOS)
   ******************************************************************************
   */
 #include "sys.h"
@@ -44,11 +54,15 @@ void _sys_exit(int x)
   * @param  ch: 待发送的字符
   * @param  f: 文件指针(未使用)
   * @retval 发送的字符
-  * @note   阻塞等待发送数据寄存器为空
+  * @note   设计权衡(为什么保留阻塞式发送):
+  *          9600波特率下每字符约1.04ms, 一周期协议帧约74字符≈77ms。
+  *          printf仅由低优先级通信任务(2)调用, 阻塞期间传感器(3)/报警(4)
+  *          任务照常抢占, 不影响实时性; 若未来提波特率或输出量增大,
+  *          再考虑环形缓冲+TXE中断发送方案(见docs/RTOS改造方案.md)
   */
 int fputc(int ch, FILE *f)
 {
-	while((USART1->SR&0X40)==0);	//循环等待,直到发送寄存器为空
+	while((USART1->SR&0X40)==0);	//循环等待,直到发送寄存器为空(TC位)
 	USART1->DR = (u8) ch;
 	return ch;
 }

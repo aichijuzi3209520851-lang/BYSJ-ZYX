@@ -2,7 +2,8 @@
   ******************************************************************************
   * @file    User/main.c
   * @brief   智能温室环境监控系统主程序(FreeRTOS任务化版)
-  * @version V2.0
+  * @author  周颖暄
+  * @version V2.1
   * @date    2026-10-25
   * @note    输入: DHT11温湿度 / 土壤湿度(D2-5-2K) / 烟雾传感器 / 双串口指令
   *          输出: OLED显示 / 多LED+蜂鸣器报警 / 电机与舵机联动
@@ -27,6 +28,8 @@
   *   V1.0  2026-09-20  注释规范化; 水位传感器替换为D2-5-2K土壤湿度模块
   *   V1.1  2026-10-25  报警阈值宏化统一(三端一致); 双串口指令解析合并
   *   V2.0  2026-10-25  FreeRTOS任务化重构(方案见 docs/RTOS改造方案.md)
+  *   V2.1  2026-10-25  注释交接化升级: 四任务函数头增加"任务卡"(优先级/栈/
+  *                     周期/阻塞点/输入输出/共享资源)速查信息
   ******************************************************************************
   */
 //说明:
@@ -192,9 +195,20 @@ static void Alarm_Hardware_Init(void)
 
 /* ==================== 传感器任务 ==================== */
 /**
-  * @brief  传感器采集任务(周期1.5s)
+  * @brief  传感器采集任务（周期 1.5s）
+  *
+  * 任务卡（交接速查）：
+  *   优先级     : TASK_PRIO_SENSOR(3)，低于报警任务——采集可被报警判定打断
+  *   栈         : 512字（DHT11时序局部量 + ADC累加 + 消息组装）
+  *   周期/触发  : vTaskDelay 周期 1500ms
+  *   阻塞点     : ① DHT11读取(~25ms, 挂起调度器保护) ② 消抖vTaskDelay(50ms)
+  *                ③ 重试间隔vTaskDelay(200ms) ④ 周期等待vTaskDelay(1500ms)
+  *   输入       : DHT11(PA15) / 土壤ADC(PA0) / 烟雾DOUT(PA6)
+  *   输出       : xSensorQueue(深度1, xQueueOverwrite最新快照语义)
+  *   共享资源   : 无直接共享——经消息队列解耦, 不持任何锁
+  *
   * @note   DHT11失败重试2次(间隔200ms, 器件采样率<=1Hz约束下的补救窗口);
-  *         土壤ADC取8次均值; 烟雾50ms双采样消抖(vTaskDelay不阻塞他任务)
+  *         土壤ADC取8次均值抑制抖动; 烟雾50ms双采样消抖(vTaskDelay不阻塞他任务)
   */
 static void Sensor_Task(void *pvParameters)
 {
@@ -252,9 +266,21 @@ static void Sensor_Task(void *pvParameters)
 
 /* ==================== 报警控制任务 ==================== */
 /**
-  * @brief  报警控制任务(事件驱动: 收到传感器快照即判定)
+  * @brief  报警控制任务（事件驱动：收到传感器快照即判定）
+  *
+  * 任务卡（交接速查）：
+  *   优先级     : TASK_PRIO_ALARM(4)，应用层最高——报警判定不被任何任务延迟
+  *   栈         : 256字（判定逻辑无大局部量）
+  *   周期/触发  : xQueueReceive(xSensorQueue) 阻塞等待，快照到达即运行
+  *   阻塞点     : ① 等队列(portMAX_DELAY) ② xStateMutex/xActuatorMutex短临界区
+  *   输入       : xSensorQueue 的 SensorMsg_t 快照
+  *   输出       : LED/蜂鸣器 GPIO、舵机/电机(xActuatorMutex保护)、
+  *                g_sys(xStateMutex保护)、xReportQueue(通知通信任务打印)
+  *   共享资源   : g_sys 与执行器——全部经互斥锁访问
+  *
   * @note   统一阈值判定→声光输出→自动模式执行器联动→更新系统状态→
-  *         通知通信任务按协议打印
+  *         通知通信任务按协议打印。手动模式下执行器归通信任务管辖,
+  *         本任务只更新声光与状态, 不碰舵机/电机
   */
 static void Alarm_Task(void *pvParameters)
 {
@@ -330,9 +356,21 @@ static void Alarm_Task(void *pvParameters)
 
 /* ==================== 通信任务 ==================== */
 /**
-  * @brief  串口通信任务: 指令解析执行 + 协议数据打印
+  * @brief  串口通信任务：指令解析执行 + 协议数据打印
+  *
+  * 任务卡（交接速查）：
+  *   优先级     : TASK_PRIO_COMM(2)，高于显示——命令响应不被刷屏拖延
+  *   栈         : 384字（含printf调用链，printf库需要一定栈深）
+  *   周期/触发  : xQueueReceive(xCmdQueue) 50ms超时轮转（兼顾命令与打印两源）
+  *   阻塞点     : ① 等命令队列(50ms超时) ② printf阻塞发送(~77ms/帧)
+  *                ③ xStateMutex/xActuatorMutex短临界区
+  *   输入       : xCmdQueue(ISR直投的命令帧) + xReportQueue(报警任务的打印请求)
+  *   输出       : printf协议文本(USART1) + g_sys状态更新 + 手动模式执行器
+  *   共享资源   : g_sys(xStateMutex)、舵机/电机(xActuatorMutex)
+  *
   * @note   指令来自xCmdQueue(ISR直投, 毫秒级响应);
-  *         协议文本与V1.x逐字节一致, 上位机/小程序零改动
+  *         协议文本与V1.x逐字节一致, 上位机/小程序零改动——修改打印格式
+  *         前务必同步 02-PC-UpperComputer 的解析正则
   */
 static void Comm_Task(void *pvParameters)
 {
@@ -430,8 +468,19 @@ static void Comm_Task(void *pvParameters)
 
 /* ==================== 显示任务 ==================== */
 /**
-  * @brief  OLED显示任务(周期500ms, 增量刷新数值区)
-  * @note   标签在调度器启动前已绘制; 低优先级, 高负载时自动让路
+  * @brief  OLED显示任务（周期500ms，增量刷新数值区）
+  *
+  * 任务卡（交接速查）：
+  *   优先级     : TASK_PRIO_DISPLAY(1)，全系统最低——刷屏忙等期间让出CPU给所有人
+  *   栈         : 512字（OLED驱动调用链使用局部缓冲）
+  *   周期/触发  : vTaskDelay 周期 500ms
+  *   阻塞点     : ① xStateMutex短临界区 ② 软件I2C刷屏忙等(每字符~1ms, 见OLED.c)
+  *   输入       : g_sys(xStateMutex保护下读取快照)
+  *   输出       : OLED数值区(标签已在main初始化时画好, 本任务只刷数值)
+  *   共享资源   : g_sys(只读)——绝不在本任务调用任何阻塞>10ms的非显示API
+  *
+  * @note   设计依据: OLED软件I2C整屏刷新35~50ms且CPU忙等(耗时预算见OLED.c
+  *         文件头), 因此放最低优先级+增量刷新, 报警爆发时刷屏自动让路
   */
 static void Display_Task(void *pvParameters)
 {
