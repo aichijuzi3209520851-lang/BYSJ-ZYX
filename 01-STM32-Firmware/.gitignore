@@ -12,3 +12,5 @@ DebugConfig/
 
 # 忽略批处理文件（可选，看你想不想传 keilkill.bat）
 # keilkill.bat
+# 构建日志
+build*.log
