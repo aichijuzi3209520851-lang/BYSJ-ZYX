@@ -1,14 +1,21 @@
 <!-- 首页 -->
 <view class="container">
 
-  <!-- 顶部品牌区: 深绿平铺, 白字层级 -->
+  <!-- 顶部品牌区: 温室大棚实拍背景 + 底部渐变遮罩, 文字压在下沿暗区 -->
   <view class="hero">
-    <view class="hero-badge">
-      <view class="pulse-dot hero-dot"></view>
-      <text class="hero-badge-text">系统运行中</text>
+    <image class="hero-bg" src="/images/hero-greenhouse.jpg" mode="aspectFill" />
+    <view class="hero-scrim"></view>
+
+    <view class="hero-content">
+      <view class="hero-badge">
+        <view class="pulse-dot hero-dot"></view>
+        <text class="hero-badge-text">系统运行中</text>
+      </view>
+      <view class="hero-title-group">
+        <text class="hero-title">智能温室大棚监测</text>
+        <text class="hero-sub">Smart Greenhouse Monitoring</text>
+      </view>
     </view>
-    <text class="hero-title">智能温室大棚监测</text>
-    <text class="hero-sub">Smart Greenhouse Monitoring</text>
   </view>
 
   <!-- 欢迎卡片 -->
