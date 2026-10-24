@@ -12,6 +12,10 @@
   */
 #include "dht11.h"
 #include "delay.h"
+#ifdef USE_FREERTOS
+#include "FreeRTOS.h"
+#include "task.h"
+#endif
 
 /**
   * @brief  配置DHT11数据脚为输出模式(推挽)
@@ -134,11 +138,19 @@ u8 DHT11_Read_Byte(void)
   * @param  humi: 湿度值输出指针(范围约20%~90%RH)
   * @retval 0:读取成功; 1:读取失败
   * @note   仅当校验和(buf[0]+buf[1]+buf[2]+buf[3]==buf[4])通过时才更新输出
+  *          RTOS态: 读取期间挂起调度器, 防止任务切换打断us级时序;
+  *          串口/SysTick中断照常运行(每字节ISR仅2~5us, 对20~30us
+  *          采样容限无威胁)。禁止改用taskENTER_CRITICAL包整段读取:
+  *          25ms关中断将丢失约24字节串口数据(9600波特)
   */
-u8 DHT11_Read_Data(u8 *temp,u8 *humi)    
-{        
+u8 DHT11_Read_Data(u8 *temp,u8 *humi)
+{
  	u8 buf[5];
 	u8 i;
+	u8 ret = 1;
+#ifdef USE_FREERTOS
+	vTaskSuspendAll();          /* 禁止任务切换(中断保持运行) */
+#endif
 	DHT11_Rst();
 	if(DHT11_Check()==0)
 	{
@@ -150,9 +162,13 @@ u8 DHT11_Read_Data(u8 *temp,u8 *humi)
 		{
 			*humi=buf[0];
 			*temp=buf[2];
+			ret = 0;
 		}
-	}else return 1;
-	return 0;	    
+	}
+#ifdef USE_FREERTOS
+	xTaskResumeAll();           /* 恢复调度 */
+#endif
+	return ret;
 }
 /**
   * @brief  DHT11初始化(复位并检测器件是否存在)

@@ -101,13 +101,10 @@ void UsageFault_Handler(void)
 }
 
 /**
-  * @brief  This function handles SVCall exception.
-  * @param  None
-  * @retval None
+  * @brief  SVCall / PendSV / SysTick 三个内核异常入口已由 FreeRTOS 端口接管:
+  *         见 User/FreeRTOSConfig.h 中的宏映射(vPortSVCHandler/xPortPendSVHandler/
+  *         xPortSysTickHandler), 此处不再定义, 否则符号重复。
   */
-void SVC_Handler(void)
-{
-}
 
 /**
   * @brief  This function handles Debug Monitor exception.
@@ -115,24 +112,6 @@ void SVC_Handler(void)
   * @retval None
   */
 void DebugMon_Handler(void)
-{
-}
-
-/**
-  * @brief  This function handles PendSVC exception.
-  * @param  None
-  * @retval None
-  */
-void PendSV_Handler(void)
-{
-}
-
-/**
-  * @brief  This function handles SysTick Handler.
-  * @param  None
-  * @retval None
-  */
-void SysTick_Handler(void)
 {
 }
 

@@ -13,7 +13,13 @@
   ******************************************************************************
   */
 #include "sys.h"
-#include "usart.h"	  
+#include "usart.h"
+#include <string.h>   /* memcpy(ISR命令拷贝) */
+
+#ifdef USE_FREERTOS
+/* 命令队列实例(main中创建前ISR可能触发, 判空保护) */
+QueueHandle_t xCmdQueue = NULL;
+#endif
 
 /* printf重定向支持(禁用半主机) */
 #if 1
@@ -88,8 +94,8 @@ void uart_init(u32 bound){
 
 	//USART1 NVIC配置
 	NVIC_InitStructure.NVIC_IRQChannel = USART1_IRQn;
-	NVIC_InitStructure.NVIC_IRQChannelPreemptionPriority=3 ;//抢占优先级3
-	NVIC_InitStructure.NVIC_IRQChannelSubPriority = 3;		//子优先级3
+	NVIC_InitStructure.NVIC_IRQChannelPreemptionPriority=6 ;//抢占优先级6(RTOS下须>=MAX_SYSCALL=5)
+	NVIC_InitStructure.NVIC_IRQChannelSubPriority = 1;		//子优先级1
 	NVIC_InitStructure.NVIC_IRQChannelCmd = ENABLE;			//使能IRQ通道
 	NVIC_Init(&NVIC_InitStructure);	//根据指定参数初始化NVIC寄存器
 
@@ -107,11 +113,40 @@ void uart_init(u32 bound){
 
 }
 
+#ifdef USE_FREERTOS
+/**
+  * @brief  帧完成后向命令队列投递消息(ISR内调用, 两串口共用)
+  * @param  src: 来源串口(1或3)
+  * @param  buf: 帧缓冲区(不含\r\n)
+  * @param  sta: 对应的接收状态标志(用于取帧长)
+  * @retval 无
+  * @note   队列满时丢弃本帧(命令为短突发, 不会持续满); 投递后清除帧标志
+  */
+static void USART_DispatchCommand(uint8_t src, u8 *buf, u16 sta)
+{
+    BaseType_t xHigherPriorityTaskWoken = pdFALSE;
+    CmdMsg_t   msg;
+    u16        len = sta & 0x3FFF;
+
+    if (xCmdQueue == NULL)                 /* 队列尚未创建(启动瞬间), 丢弃 */
+    {
+        return;
+    }
+
+    msg.src = src;
+    msg.len = (len > CMD_PAYLOAD_MAX) ? CMD_PAYLOAD_MAX : len;
+    memcpy(msg.data, buf, msg.len);
+
+    xQueueSendFromISR(xCmdQueue, &msg, &xHigherPriorityTaskWoken);
+    portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
+}
+#endif
+
 /**
   * @brief  USART1中断服务函数(接收帧数据)
   * @param  无
   * @retval 无
-  * @note   以0x0d 0x0a作为帧结束标志, 接收完成后置位USART_RX_STA.bit15
+  * @note   以0x0d 0x0a作为帧结束标志; RTOS态帧完成即投递命令队列(毫秒级响应)
   */
 void USART1_IRQHandler(void)
 {
@@ -125,7 +160,15 @@ void USART1_IRQHandler(void)
 			if(USART_RX_STA&0x4000)//已收到0x0d
 			{
 				if(Res!=0x0a)USART_RX_STA=0;//校验错误,重新开始
-				else USART_RX_STA|=0x8000;	//接收完成
+				else                        //接收完成
+				{
+				#ifdef USE_FREERTOS
+					USART_DispatchCommand(1, USART_RX_BUF, USART_RX_STA);
+					USART_RX_STA=0;         //帧已被消费, 立即重置接收
+				#else
+					USART_RX_STA|=0x8000;   //裸机: 置完成标志, 主循环查询
+				#endif
+				}
 			}
 			else //还没收到0X0D
 			{
@@ -168,8 +211,8 @@ void uart3_init(u32 bound){
 
 	//USART3 NVIC配置
 	NVIC_InitStructure.NVIC_IRQChannel = USART3_IRQn;
-	NVIC_InitStructure.NVIC_IRQChannelPreemptionPriority=3 ;//抢占优先级3
-	NVIC_InitStructure.NVIC_IRQChannelSubPriority = 3;		//子优先级3
+	NVIC_InitStructure.NVIC_IRQChannelPreemptionPriority=6 ;//抢占优先级6(RTOS下须>=MAX_SYSCALL=5)
+	NVIC_InitStructure.NVIC_IRQChannelSubPriority = 2;		//子优先级2
 	NVIC_InitStructure.NVIC_IRQChannelCmd = ENABLE;			//使能IRQ通道
 	NVIC_Init(&NVIC_InitStructure);	//根据指定参数初始化NVIC寄存器
 
@@ -191,7 +234,7 @@ void uart3_init(u32 bound){
   * @brief  USART3中断服务函数(接收帧数据)
   * @param  无
   * @retval 无
-  * @note   以0x0d 0x0a作为帧结束标志, 接收完成后置位USART3_RX_STA.bit15
+  * @note   与USART1共用同一指令解析入口; RTOS态帧完成即投递命令队列
   */
 void USART3_IRQHandler(void)
 {
@@ -205,7 +248,15 @@ void USART3_IRQHandler(void)
 			if(USART3_RX_STA&0x4000)//已收到0x0d
 			{
 				if(Res!=0x0a)USART3_RX_STA=0;//校验错误,重新开始
-				else USART3_RX_STA|=0x8000;	//接收完成
+				else                          //接收完成
+				{
+				#ifdef USE_FREERTOS
+					USART_DispatchCommand(3, USART3_RX_BUF, USART3_RX_STA);
+					USART3_RX_STA=0;         //帧已被消费, 立即重置接收
+				#else
+					USART3_RX_STA|=0x8000;   //裸机: 置完成标志, 主循环查询
+				#endif
+				}
 			}
 			else //还没收到0X0D
 			{
