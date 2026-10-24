@@ -1,7 +1,9 @@
 # EMQX MQTT 服务器 · 部署与一键启动器
 
 本目录包含 EMQX 本地服务器的**一键启动器**源码（`MQTT.exe`）。
-EMQX 发行版本体体积较大（含 Erlang 运行时），**不纳入仓库**，请按下面步骤自行下载放置。
+EMQX 完整发行版已作为本仓库 Release 附件提供（52MB，免官网下载）：
+
+> **⬇️ 直接下载**：[emqx-5.0.26-windows-amd64.zip](https://github.com/aichijuzi3209520851-lang/BYSJ-ZYX/releases/download/emqx-5.0.26/emqx-5.0.26-windows-amd64.zip)（Release 页：[emqx-5.0.26](https://github.com/aichijuzi3209520851-lang/BYSJ-ZYX/releases/tag/emqx-5.0.26)）
 
 ## 一键启动器
 
@@ -19,7 +21,9 @@ EMQX 发行版本体体积较大（含 Erlang 运行时），**不纳入仓库**
 
 ## 部署 EMQX
 
-1. 从 [EMQX 官网](https://www.emqx.io/zh/downloads) 下载 **v5.0.26 · Windows amd64** 压缩包
+1. 下载 EMQX 发行包（两种方式任选）：
+   - **本仓库 Release 附件（推荐，免翻墙）**：[emqx-5.0.26-windows-amd64.zip](https://github.com/aichijuzi3209520851-lang/BYSJ-ZYX/releases/download/emqx-5.0.26/emqx-5.0.26-windows-amd64.zip)
+   - [EMQX 官网](https://www.emqx.io/zh/downloads) 下载 **v5.0.26 · Windows amd64**
 2. 解压到 **D 盘 1~2 级浅层目录**，推荐：`D:\EMQX-MQTT\emqx-5.0.26-windows-amd64`
    （EMQX 放在过深的路径会导致 Erlang 虚拟机启动异常，启动器按此约定扫描）
 3. 双击 `MQTT.exe` 启动，或手动 `cd emqx-5.0.26-windows-amd64\bin && .\emqx.cmd start`

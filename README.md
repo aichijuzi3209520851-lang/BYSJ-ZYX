@@ -113,9 +113,10 @@ Temp:26C   Humi:60%RH   Soil:35%(raw=1200)  Servo:OFF Motor:OFF  Air:nice
 - 双击 `MQTT.exe` → 启动并打开 Web 控制台（`http://localhost:18083`，admin/public）
 - 命令行 `MQTT.exe stop` → 停止服务器
 
-EMQX 发行版体积较大未纳入仓库，请从 [EMQX 官网](https://www.emqx.io/zh/downloads) 下载
-**5.0.26 Windows amd64** 版本，解压到 D 盘 1~2 级浅层目录（深路径会导致 Erlang 启动异常），
-或直接使用启动器扫描定位。防火墙需放行 **1883 / 8083 / 18083** 端口。
+EMQX 发行包（52MB）已作为仓库 Release 附件提供：
+**[⬇️ emqx-5.0.26-windows-amd64.zip 一键下载](https://github.com/aichijuzi3209520851-lang/BYSJ-ZYX/releases/download/emqx-5.0.26/emqx-5.0.26-windows-amd64.zip)**
+（也可从 [EMQX 官网](https://www.emqx.io/zh/downloads) 下载 5.0.26 Windows amd64 版本）
+解压到 D 盘 1~2 级浅层目录（深路径会导致 Erlang 启动异常）。防火墙需放行 **1883 / 8083 / 18083** 端口。
 
 ### 3. 运行 PC 上位机
 
