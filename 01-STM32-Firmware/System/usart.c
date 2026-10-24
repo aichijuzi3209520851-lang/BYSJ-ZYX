@@ -2,7 +2,7 @@
   ******************************************************************************
   * @file    System/usart.c
   * @brief   串口驱动实现(USART1 / USART3)
-  * @author  周颖暄
+  * @author  LCW
   * @version V2.0
   * @date    2026-10-25
   * @note    USART1: PA9(TX)/PA10(RX); USART3: PB10(TX)/PB11(RX); 8N1, 波特率9600

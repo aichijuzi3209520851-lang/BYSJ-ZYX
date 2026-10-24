@@ -2,7 +2,7 @@
   ******************************************************************************
   * @file    System/OLED_Font.h
   * @brief   OLED 8x16 点阵字模库(ASCII可见字符)
-  * @author  周颖暄
+  * @author  LCW
   * @version V1.1
   * @date    2026-09-20
   * @note    数组下标为字符ASCII码减去0x20(空格)

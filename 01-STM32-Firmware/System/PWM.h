@@ -2,7 +2,7 @@
   ******************************************************************************
   * @file    System/PWM.h
   * @brief   TIM2 PWM 输出驱动头文件
-  * @author  周颖暄
+  * @author  LCW
   * @version V1.1
   * @date    2026-10-25
   * @note    TIM2 PWM（舵机CH2/电机CH3共用时基）对外接口

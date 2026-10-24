@@ -2,7 +2,7 @@
   ******************************************************************************
   * @file    System/Delay.c
   * @brief   延时库(FreeRTOS版)
-  * @author  周颖暄
+  * @author  LCW
   * @version V2.0
   * @date    2026-10-25
   * @note    微秒延时: DWT->CYCCNT周期计数器轮询, 完全不触碰SysTick,

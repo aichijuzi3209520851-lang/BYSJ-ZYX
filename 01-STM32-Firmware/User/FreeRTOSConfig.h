@@ -2,7 +2,7 @@
   ******************************************************************************
   * @file    User/FreeRTOSConfig.h
   * @brief   FreeRTOS V10.5.1 内核配置(STM32F103C8T6 @72MHz, 20KB RAM)
-  * @author  周颖暄
+  * @author  LCW
   * @version V1.1
   * @date    2026-10-25
   * @note    中断优先级约定(4位优先级, 数值越小优先级越高):

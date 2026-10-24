@@ -2,7 +2,7 @@
   ******************************************************************************
   * @file    System/usart.h
   * @brief   串口驱动头文件(USART1/USART3)
-  * @author  周颖暄
+  * @author  LCW
   * @version V2.0
   * @date    2026-10-25
   * @note    USART_REC_LEN: 单帧最大字节数; 帧结束标志为0x0D 0x0A

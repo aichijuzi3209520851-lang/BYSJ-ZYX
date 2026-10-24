@@ -2,7 +2,7 @@
   ******************************************************************************
   * @file    System/OLED.h
   * @brief   OLED(SSD1306, 128x64)驱动头文件
-  * @author  周颖暄
+  * @author  LCW
   * @version V1.1
   * @date    2026-09-20
   * @note    Line范围1~4, Column范围1~16(8x16字库)
