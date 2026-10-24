@@ -1,0 +1,2725 @@
+﻿// ===== FILE: App.config =====
+<?xml version="1.0" encoding="utf-8" ?>
+<configuration>
+    <startup> 
+        <supportedRuntime version="v4.0" sku=".NETFramework,Version=v4.7.2" />
+    </startup>
+</configuration>
+
+
+// ===== FILE: DHT11.csproj =====
+<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="15.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <Import Project="$(MSBuildExtensionsPath)\$(MSBuildToolsVersion)\Microsoft.Common.props" Condition="Exists('$(MSBuildExtensionsPath)\$(MSBuildToolsVersion)\Microsoft.Common.props')" />
+  <PropertyGroup>
+    <Configuration Condition=" '$(Configuration)' == '' ">Debug</Configuration>
+    <Platform Condition=" '$(Platform)' == '' ">AnyCPU</Platform>
+    <ProjectGuid>{7E9C311B-5349-4DAD-B948-2588A3AFC127}</ProjectGuid>
+    <OutputType>WinExe</OutputType>
+    <RootNamespace>DHT11</RootNamespace>
+    <AssemblyName>DHT11</AssemblyName>
+    <TargetFrameworkVersion>v4.7.2</TargetFrameworkVersion>
+    <FileAlignment>512</FileAlignment>
+    <AutoGenerateBindingRedirects>true</AutoGenerateBindingRedirects>
+    <Deterministic>true</Deterministic>
+  </PropertyGroup>
+  <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Debug|AnyCPU' ">
+    <PlatformTarget>AnyCPU</PlatformTarget>
+    <DebugSymbols>true</DebugSymbols>
+    <DebugType>portable</DebugType>
+    <Optimize>false</Optimize>
+    <OutputPath>bin\Debug\</OutputPath>
+    <DefineConstants>DEBUG;TRACE</DefineConstants>
+    <ErrorReport>prompt</ErrorReport>
+    <WarningLevel>4</WarningLevel>
+  </PropertyGroup>
+  <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Release|AnyCPU' ">
+    <PlatformTarget>AnyCPU</PlatformTarget>
+    <DebugType>pdbonly</DebugType>
+    <Optimize>true</Optimize>
+    <OutputPath>bin\Release\</OutputPath>
+    <DefineConstants>TRACE</DefineConstants>
+    <ErrorReport>prompt</ErrorReport>
+    <WarningLevel>4</WarningLevel>
+  </PropertyGroup>
+  <ItemGroup>
+    <Reference Include="System" />
+    <Reference Include="System.Core" />
+    <Reference Include="System.Xml.Linq" />
+    <Reference Include="System.Data.DataSetExtensions" />
+    <Reference Include="Microsoft.CSharp" />
+    <Reference Include="System.Data" />
+    <Reference Include="System.Deployment" />
+    <Reference Include="System.Drawing" />
+    <Reference Include="System.Net.Http" />
+    <Reference Include="System.Windows.Forms" />
+    <Reference Include="System.Xml" />
+    <Reference Include="MQTTnet">
+      <HintPath>$(OutputPath)MQTTnet.dll</HintPath>
+      <Private>True</Private>
+    </Reference>
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="packages.config" />
+  </ItemGroup>
+  <ItemGroup>
+    <Compile Include="Form1.cs">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="Form1.Designer.cs">
+      <DependentUpon>Form1.cs</DependentUpon>
+    </Compile>
+    <Compile Include="Program.cs" />
+    <Compile Include="Properties\AssemblyInfo.cs" />
+    <EmbeddedResource Include="Properties\Resources.resx">
+      <Generator>ResXFileCodeGenerator</Generator>
+      <LastGenOutput>Resources.Designer.cs</LastGenOutput>
+      <SubType>Designer</SubType>
+    </EmbeddedResource>
+    <Compile Include="Properties\Resources.Designer.cs">
+      <AutoGen>True</AutoGen>
+      <DependentUpon>Resources.resx</DependentUpon>
+    </Compile>
+    <None Include="Properties\Settings.settings">
+      <Generator>SettingsSingleFileGenerator</Generator>
+      <LastGenOutput>Settings.Designer.cs</LastGenOutput>
+    </None>
+    <Compile Include="Properties\Settings.Designer.cs">
+      <AutoGen>True</AutoGen>
+      <DependentUpon>Settings.settings</DependentUpon>
+      <DesignTimeSharedInput>True</DesignTimeSharedInput>
+    </Compile>
+    <None Include="README.md" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="App.config" />
+  </ItemGroup>
+  <ItemGroup>
+    <Content Include="ICON\**\*.*">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+  </ItemGroup>
+  <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
+</Project>
+
+
+// ===== FILE: Form1.cs =====
+using System;
+using System.Collections.Generic;
+using System.ComponentModel;
+using System.Data;
+using System.Drawing;
+using System.Drawing.Drawing2D;
+using System.IO;
+using System.IO.Ports;
+using System.Linq;
+using System.Net.Http;
+using System.Text;
+using System.Text.RegularExpressions;
+using System.Threading;
+using System.Threading.Tasks;
+using System.Windows.Forms;
+using MQTTnet;
+using MQTTnet.Client;
+
+namespace DHT11
+{
+    public partial class Form1 : Form
+    {
+        private SerialPort _serialPort;
+        private List<double> _tempHistory = new List<double>();
+        private List<double> _humHistory = new List<double>();
+        private List<double> _waterHistory = new List<double>();  // 鏂板姘翠綅鍘嗗彶鏁版嵁
+        private List<string> _timestampHistory = new List<string>();
+        private List<string> _alarmTypeHistory = new List<string>();
+        private List<string> _airQualityHistory = new List<string>();  // 绌烘皵璐ㄩ噺鍘嗗彶
+        private List<string> _servoStatusHistory = new List<string>();  // 绐楁埛鐘舵€佸巻鍙?
+        private List<string> _motorStatusHistory = new List<string>();  // 椋庢墖鐘舵€佸巻鍙?
+        private const int MaxHistoryPoints = 100;
+        private StringBuilder _receivedBuffer = new StringBuilder();
+        private StringBuilder _logBuffer = new StringBuilder();
+
+        // UI鎺т欢
+        private ComboBox comPortComboBox;
+        private ComboBox baudRateComboBox;
+        private Button openButton;
+        private Button closeButton;
+        private Button refreshButton;
+        private Button clearButton;
+        private Button exportButton;
+        private Label tempLabel;
+        private Label humLabel;
+        private Panel chartPanel;
+        private Label portLabel;
+        private Label baudRateLabel;
+        private Label lblStatus;
+        private TextBox logTextBox;
+        private Label logLabel;
+        private CheckBox autoScrollCheckBox;
+        private Label tempUnitLabel;
+        private Label humUnitLabel;
+
+        // 鏂板UI鎺т欢
+        private Label waterLabel;
+        private Label servoLabel;
+        private Label motorLabel;
+        private Label airQualityLabel;
+        private PictureBox waterIconPictureBox;
+        private PictureBox airQualityIconPictureBox;
+        private PictureBox windowIconPictureBox;  // 绐楁埛鍥炬爣
+        private PictureBox fanIconPictureBox;     // 椋庢墖鍥炬爣
+        private PictureBox buzzerIconPictureBox;  // 铚傞福鍣ㄥ浘鏍?
+        private Button servoOnButton;
+        private Button servoOffButton;
+        private Button motorOnButton;
+        private Button motorOffButton;
+        private Button modeAutoButton;
+        private Button modeManualButton;
+        private Label modeStatusLabel;
+
+        // MQTT鐩稿叧鎺т欢
+        private TextBox mqttBrokerTextBox;
+        private TextBox mqttTopicTextBox;
+        private TextBox mqttSubscribeTopicTextBox;
+        private Button mqttConnectButton;
+        private Button mqttDisconnectButton;
+        private Label mqttBrokerLabel;
+        private Label mqttTopicLabel;
+        private Label mqttSubscribeTopicLabel;
+        private Label mqttStatusLabel;
+        private CheckBox mqttAutoPublishCheckBox;
+
+        // 鍥炬爣鏄剧ず鎺т欢
+        private PictureBox tempIconPictureBox;
+        private PictureBox humIconPictureBox;
+        private PictureBox avatarPictureBox;
+        private Label avatarLabel;
+
+        // 瑙嗛鐩戞帶鎺т欢
+        private Label videoLabel;
+        private TextBox videoIpTextBox;
+        private Button videoConnectButton;
+        private Button videoDisconnectButton;
+        private PictureBox videoPictureBox;
+        private Label videoStatusLabel;
+
+        // 鎶ヨ闃堝€?
+        private double _tempMin = 15.0;
+        private double _tempMax = 30.0;
+        private double _humMin = 30.0;
+        private double _humMax = 70.0;
+
+        // 鎶ヨ鐘舵€?
+        private bool _tempAlarm = false;
+        private bool _humAlarm = false;
+
+        // 閰嶈壊鏂规
+        private Color primaryColor = Color.FromArgb(33, 150, 243);      // 钃濊壊
+        private Color successColor = Color.FromArgb(76, 175, 80);       // 缁胯壊
+        private Color dangerColor = Color.FromArgb(244, 67, 54);        // 绾㈣壊
+        private Color warningColor = Color.FromArgb(255, 152, 0);       // 姗欒壊
+        private Color darkColor = Color.FromArgb(52, 73, 94);           // 娣辫摑鐏?
+        private Color lightColor = Color.FromArgb(236, 240, 241);       // 娴呯伆
+        private Color chartBgColor = Color.FromArgb(250, 250, 250);     // 鍥捐〃鑳屾櫙
+
+        // 鏁版嵁鏍煎紡瑙ｆ瀽閰嶇疆锛堝浐瀹氫娇鐢⊿TM32鏍煎紡锛?
+        private string _currentDataFormat = "STM32鏍煎紡";
+
+        // 鏂板鏁版嵁瀛楁
+        private int _waterLevel = 0;
+        private string _servoStatus = "OFF";
+        private string _motorStatus = "OFF";
+        private string _airQuality = "nice";
+        private bool _hasWarning = false;
+
+        // MQTT瀹㈡埛绔拰閰嶇疆
+        private IMqttClient _mqttClient;
+        private string _mqttPublishTopic = "DHT11/data";   // 鍙戝竷涓婚锛氭俯婀垮害鏁版嵁鍙戦€佸埌杩欓噷
+        private string _mqttSubscribeTopic = "DHT11/control";  // 璁㈤槄涓婚锛氭帴鏀舵帶鍒跺懡浠?
+        private bool _mqttAutoPublish = true;               // 鏄惁鑷姩鍙戝竷鏁版嵁鍒癕QTT
+
+        // 瑙嗛娴佺浉鍏?
+        private HttpClient _videoHttpClient;
+        private CancellationTokenSource _videoCancellationToken;
+        private bool _videoStreaming = false;
+
+        public Form1()
+        {
+            InitializeComponent();  // 蹇呴』棣栧厛璋冪敤锛屽垵濮嬪寲璁捐鍣ㄧ敓鎴愮殑缁勪欢
+            InitializeSerialPort();
+            InitializeChart();
+            InitializeCustomComponents();
+            InitializeMqttClient();
+            LoadAvailablePorts();
+        }
+
+        private void InitializeCustomComponents()
+        {
+            this.SuspendLayout();
+
+            // 绐椾綋璁剧疆
+            this.Text = "鏅鸿兘娓╁澶ф鏁版嵁鐩戞祴绯荤粺涓婁綅鏈虹▼搴?;
+            this.ClientSize = new Size(1350, 750);
+            this.MinimumSize = new Size(1350, 750);  // 璁剧疆鏈€灏忕獥鍙ｅ昂瀵?
+            this.FormBorderStyle = FormBorderStyle.Sizable;
+            this.MaximizeBox = true;
+            this.StartPosition = FormStartPosition.CenterScreen;
+            this.BackColor = lightColor;
+            this.FormClosing += Form1_FormClosing;
+            this.Resize += Form1_Resize;
+
+            // ========== 鎺у埗闈㈡澘 ==========
+            Panel controlPanel = new Panel
+            {
+                Location = new Point(0, 0),
+                Size = new Size(1350, 110),
+                BackColor = Color.White
+            };
+            controlPanel.Paint += ControlPanel_Paint;
+
+            // 涓插彛閫夋嫨
+            portLabel = new Label
+            {
+                Location = new Point(20, 15),
+                AutoSize = true,
+                Text = "涓插彛閫夋嫨:",
+                Font = new Font("寰蒋闆呴粦", 10F),
+                ForeColor = darkColor
+            };
+
+            comPortComboBox = new ComboBox
+            {
+                Location = new Point(20, 40),
+                Width = 120,
+                DropDownStyle = ComboBoxStyle.DropDownList,
+                Font = new Font("寰蒋闆呴粦", 9F)
+            };
+
+            // 鍒锋柊鎸夐挳
+            refreshButton = CreateStyledButton("鍒锋柊", new Point(145, 40), new Size(60, 27), primaryColor);
+            refreshButton.Click += RefreshButton_Click;
+
+            // 娉㈢壒鐜囬€夋嫨
+            baudRateLabel = new Label
+            {
+                Location = new Point(220, 15),
+                AutoSize = true,
+                Text = "娉㈢壒鐜?",
+                Font = new Font("寰蒋闆呴粦", 10F),
+                ForeColor = darkColor
+            };
+
+            baudRateComboBox = new ComboBox
+            {
+                Location = new Point(220, 40),
+                Width = 100,
+                DropDownStyle = ComboBoxStyle.DropDownList,
+                Font = new Font("寰蒋闆呴粦", 9F)
+            };
+            baudRateComboBox.Items.AddRange(new object[] { "9600", "19200", "38400", "57600", "115200" });
+            baudRateComboBox.SelectedIndex = 0;
+            baudRateComboBox.SelectedIndexChanged += BaudRateComboBox_SelectedIndexChanged;
+
+            // 杩炴帴鎸夐挳
+            openButton = CreateStyledButton("杩炴帴涓插彛", new Point(20, 75), new Size(90, 27), successColor);
+            openButton.Click += OpenButton_Click;
+
+            closeButton = CreateStyledButton("鏂紑杩炴帴", new Point(120, 75), new Size(90, 27), dangerColor);
+            closeButton.Click += CloseButton_Click;
+            closeButton.Enabled = false;
+
+            // 鐘舵€佹爣绛?
+            lblStatus = new Label
+            {
+                Location = new Point(230, 80),
+                AutoSize = true,
+                Text = "鈼?鏈繛鎺?,
+                Font = new Font("寰蒋闆呴粦", 10F, FontStyle.Bold),
+                ForeColor = Color.Gray
+            };
+
+            // 娓呯┖鏁版嵁鎸夐挳
+            clearButton = CreateStyledButton("娓呯┖鏁版嵁", new Point(360, 75), new Size(90, 27), warningColor);
+            clearButton.Click += ClearButton_Click;
+
+            // 瀵煎嚭鏁版嵁鎸夐挳
+            exportButton = CreateStyledButton("瀵煎嚭CSV", new Point(460, 75), new Size(90, 27), primaryColor);
+            exportButton.Click += ExportButton_Click;
+
+            // ========== MQTT閰嶇疆鍖哄煙 ==========
+            // MQTT鏈嶅姟鍣ㄦ爣绛?
+            mqttBrokerLabel = new Label
+            {
+                Location = new Point(700, 15),
+                AutoSize = true,
+                Text = "MQTT鏈嶅姟鍣?",
+                Font = new Font("寰蒋闆呴粦", 10F),
+                ForeColor = darkColor
+            };
+
+            // MQTT鏈嶅姟鍣ㄥ湴鍧€杈撳叆妗?
+            mqttBrokerTextBox = new TextBox
+            {
+                Location = new Point(700, 40),
+                Width = 160,
+                Text = "192.168.184.221:1883",
+                Font = new Font("寰蒋闆呴粦", 9F)
+            };
+
+            // MQTT鍙戝竷涓婚鏍囩
+            mqttTopicLabel = new Label
+            {
+                Location = new Point(870, 15),
+                AutoSize = true,
+                Text = "鍙戝竷涓婚:",
+                Font = new Font("寰蒋闆呴粦", 10F),
+                ForeColor = darkColor
+            };
+
+            // MQTT鍙戝竷涓婚杈撳叆妗?
+            mqttTopicTextBox = new TextBox
+            {
+                Location = new Point(870, 40),
+                Width = 150,
+                Text = "DHT11/data",
+                Font = new Font("寰蒋闆呴粦", 9F)
+            };
+
+            // MQTT璁㈤槄涓婚鏍囩
+            mqttSubscribeTopicLabel = new Label
+            {
+                Location = new Point(1030, 15),
+                AutoSize = true,
+                Text = "璁㈤槄涓婚:",
+                Font = new Font("寰蒋闆呴粦", 10F),
+                ForeColor = darkColor
+            };
+
+            // MQTT璁㈤槄涓婚杈撳叆妗?
+            mqttSubscribeTopicTextBox = new TextBox
+            {
+                Location = new Point(1030, 40),
+                Width = 100,
+                Text = "DHT11/control",
+                Font = new Font("寰蒋闆呴粦", 9F)
+            };
+
+            // 鑷姩鍙戝竷鏁版嵁澶嶉€夋锛堟斁鍦ㄧ浜岃宸︿晶锛?
+            mqttAutoPublishCheckBox = new CheckBox
+            {
+                Location = new Point(700, 80),
+                AutoSize = true,
+                Text = "鑷姩鍙戝竷鏁版嵁鍒癕QTT",
+                Font = new Font("寰蒋闆呴粦", 9F),
+                Checked = true
+            };
+            mqttAutoPublishCheckBox.CheckedChanged += MqttAutoPublishCheckBox_CheckedChanged;
+
+            // MQTT杩炴帴鎸夐挳锛堝湪鍙戝竷涓婚杈撳叆妗嗘涓嬫柟锛?
+            mqttConnectButton = CreateStyledButton("杩炴帴MQTT", new Point(870, 75), new Size(90, 27), successColor);
+            mqttConnectButton.Click += MqttConnectButton_Click;
+
+            // MQTT鏂紑鎸夐挳锛堝湪杩炴帴鎸夐挳鍙宠竟锛?
+            mqttDisconnectButton = CreateStyledButton("鏂紑MQTT", new Point(970, 75), new Size(90, 27), dangerColor);
+            mqttDisconnectButton.Click += MqttDisconnectButton_Click;
+            mqttDisconnectButton.Enabled = false;
+
+            // MQTT鐘舵€佹爣绛撅紙鍦ㄦ柇寮€鎸夐挳鍙宠竟锛?
+            mqttStatusLabel = new Label
+            {
+                Location = new Point(1070, 80),
+                AutoSize = true,
+                Text = "鈼?鏈繛鎺?,
+                Font = new Font("寰蒋闆呴粦", 9F, FontStyle.Bold),
+                ForeColor = Color.Gray
+            };
+
+            // ========== 澶村儚鍜屾樀绉?==========
+            // 澶村儚鍥剧墖妗?
+            avatarPictureBox = new PictureBox
+            {
+                Location = new Point(1150, 15),
+                Size = new Size(60, 60),
+                SizeMode = PictureBoxSizeMode.Zoom,
+                BackColor = Color.White
+            };
+            // 鍔犺浇骞惰缃渾褰㈠ご鍍?
+            LoadCircularAvatar();
+
+            // 鏄电О鏍囩
+            avatarLabel = new Label
+            {
+                Location = new Point(1130, 78),
+                AutoSize = false,
+                Width = 100,
+                Height = 20,
+                Text = "鐖卞悆姗樺瓙馃崐",
+                Font = new Font("寰蒋闆呴粦", 9F),
+                ForeColor = darkColor,
+                TextAlign = ContentAlignment.MiddleCenter
+            };
+
+            // 娣诲姞鍒版帶鍒堕潰鏉?
+            controlPanel.Controls.AddRange(new Control[] {
+                portLabel, comPortComboBox, refreshButton,
+                baudRateLabel, baudRateComboBox,
+                openButton, closeButton, lblStatus,
+                clearButton, exportButton,
+                mqttBrokerLabel, mqttBrokerTextBox, mqttTopicLabel, mqttTopicTextBox,
+                mqttSubscribeTopicLabel, mqttSubscribeTopicTextBox,
+                mqttConnectButton, mqttDisconnectButton,
+                mqttStatusLabel, mqttAutoPublishCheckBox,
+                avatarPictureBox, avatarLabel
+            });
+
+            // ========== 鏁版嵁鏄剧ず闈㈡澘 ==========
+            Panel dataPanel = new Panel
+            {
+                Location = new Point(10, 130),
+                Size = new Size(850, 110),
+                BackColor = Color.White,
+                BorderStyle = BorderStyle.None
+            };
+            dataPanel.Paint += DataPanel_Paint;
+
+            // 娓╁害鍥炬爣
+            tempIconPictureBox = new PictureBox
+            {
+                Location = new Point(10, 30),
+                Size = new Size(35, 35),
+                SizeMode = PictureBoxSizeMode.Zoom,
+                Image = LoadIconSafely("ICON\\娓╁害.png")
+            };
+
+            // 娓╁害鏄剧ず
+            Label tempTitleLabel = new Label
+            {
+                Location = new Point(50, 10),
+                AutoSize = true,
+                Text = "娓╁害",
+                Font = new Font("寰蒋闆呴粦", 9F),
+                ForeColor = darkColor
+            };
+
+            tempLabel = new Label
+            {
+                Location = new Point(50, 30),
+                Size = new Size(70, 30),
+                Text = "--.-",
+                Font = new Font("Arial", 18F, FontStyle.Bold),
+                ForeColor = dangerColor,
+                TextAlign = ContentAlignment.MiddleLeft
+            };
+
+            tempUnitLabel = new Label
+            {
+                Location = new Point(50, 60),
+                AutoSize = true,
+                Text = "掳C",
+                Font = new Font("Arial", 10F),
+                ForeColor = dangerColor
+            };
+
+            // 婀垮害鍥炬爣
+            humIconPictureBox = new PictureBox
+            {
+                Location = new Point(120, 30),
+                Size = new Size(35, 35),
+                SizeMode = PictureBoxSizeMode.Zoom,
+                Image = LoadIconSafely("ICON\\婀垮害.png")
+            };
+
+            // 婀垮害鏄剧ず
+            Label humTitleLabel = new Label
+            {
+                Location = new Point(160, 10),
+                AutoSize = true,
+                Text = "婀垮害",
+                Font = new Font("寰蒋闆呴粦", 9F),
+                ForeColor = darkColor
+            };
+
+            humLabel = new Label
+            {
+                Location = new Point(160, 30),
+                Size = new Size(70, 30),
+                Text = "--.-",
+                Font = new Font("Arial", 18F, FontStyle.Bold),
+                ForeColor = primaryColor,
+                TextAlign = ContentAlignment.MiddleLeft
+            };
+
+            humUnitLabel = new Label
+            {
+                Location = new Point(160, 60),
+                AutoSize = true,
+                Text = "%",
+                Font = new Font("Arial", 10F),
+                ForeColor = primaryColor
+            };
+
+            // 姘翠綅鍥炬爣
+            waterIconPictureBox = new PictureBox
+            {
+                Location = new Point(230, 30),
+                Size = new Size(35, 35),
+                SizeMode = PictureBoxSizeMode.Zoom,
+                Image = LoadIconSafely("ICON\\姘翠綅.png")
+            };
+
+            // 姘翠綅鏄剧ず
+            Label waterTitleLabel = new Label
+            {
+                Location = new Point(270, 10),
+                AutoSize = true,
+                Text = "姘翠綅",
+                Font = new Font("寰蒋闆呴粦", 9F),
+                ForeColor = darkColor
+            };
+
+            waterLabel = new Label
+            {
+                Location = new Point(270, 30),
+                Size = new Size(70, 30),
+                Text = "--",
+                Font = new Font("Arial", 18F, FontStyle.Bold),
+                ForeColor = Color.FromArgb(255, 152, 0),
+                TextAlign = ContentAlignment.MiddleLeft
+            };
+
+            Label waterUnitLabel = new Label
+            {
+                Location = new Point(270, 60),
+                AutoSize = true,
+                Text = "%",
+                Font = new Font("Arial", 10F),
+                ForeColor = Color.FromArgb(255, 152, 0)
+            };
+
+            // 绌烘皵璐ㄩ噺鍥炬爣
+            airQualityIconPictureBox = new PictureBox
+            {
+                Location = new Point(340, 30),
+                Size = new Size(35, 35),
+                SizeMode = PictureBoxSizeMode.Zoom,
+                Image = LoadIconSafely("ICON\\绌烘皵璐ㄩ噺浼樼姸鎬?png")
+            };
+
+            // 绌烘皵璐ㄩ噺鏄剧ず
+            Label airQualityTitleLabel = new Label
+            {
+                Location = new Point(380, 10),
+                AutoSize = true,
+                Text = "绌烘皵",
+                Font = new Font("寰蒋闆呴粦", 9F),
+                ForeColor = darkColor
+            };
+
+            airQualityLabel = new Label
+            {
+                Location = new Point(380, 30),
+                Size = new Size(70, 30),
+                Text = "nice",
+                Font = new Font("Arial", 16F, FontStyle.Bold),
+                ForeColor = successColor,
+                TextAlign = ContentAlignment.MiddleLeft
+            };
+
+            // 绐楁埛鍥炬爣锛堝師鑸垫満锛?
+            windowIconPictureBox = new PictureBox
+            {
+                Location = new Point(450, 30),
+                Size = new Size(35, 35),
+                SizeMode = PictureBoxSizeMode.Zoom,
+                Image = LoadIconSafely("ICON\\绐楁埛-鍏崇姸鎬?png")
+            };
+
+            // 绐楁埛鐘舵€佹樉绀?
+            Label windowTitleLabel = new Label
+            {
+                Location = new Point(490, 10),
+                AutoSize = true,
+                Text = "绐楁埛",
+                Font = new Font("寰蒋闆呴粦", 9F),
+                ForeColor = darkColor
+            };
+
+            servoLabel = new Label
+            {
+                Location = new Point(490, 35),
+                Size = new Size(70, 25),
+                Text = "鍏抽棴",
+                Font = new Font("寰蒋闆呴粦", 12F, FontStyle.Bold),
+                ForeColor = darkColor,
+                TextAlign = ContentAlignment.MiddleLeft
+            };
+
+            // 椋庢墖鍥炬爣锛堝師鐢垫満锛?
+            fanIconPictureBox = new PictureBox
+            {
+                Location = new Point(560, 30),
+                Size = new Size(35, 35),
+                SizeMode = PictureBoxSizeMode.Zoom,
+                Image = LoadIconSafely("ICON\\椋庢墖-鍏崇姸鎬?png")
+            };
+
+            // 椋庢墖鐘舵€佹樉绀?
+            Label fanTitleLabel = new Label
+            {
+                Location = new Point(600, 10),
+                AutoSize = true,
+                Text = "椋庢墖",
+                Font = new Font("寰蒋闆呴粦", 9F),
+                ForeColor = darkColor
+            };
+
+            motorLabel = new Label
+            {
+                Location = new Point(600, 35),
+                Size = new Size(70, 25),
+                Text = "鍏抽棴",
+                Font = new Font("寰蒋闆呴粦", 12F, FontStyle.Bold),
+                ForeColor = darkColor,
+                TextAlign = ContentAlignment.MiddleLeft
+            };
+
+            // 铚傞福鍣ㄥ浘鏍?
+            buzzerIconPictureBox = new PictureBox
+            {
+                Location = new Point(670, 30),
+                Size = new Size(35, 35),
+                SizeMode = PictureBoxSizeMode.Zoom,
+                Image = LoadIconSafely("ICON\\铚傞福鍣?鍏崇姸鎬?png")
+            };
+
+            // 铚傞福鍣ㄧ姸鎬佹樉绀?
+            Label buzzerTitleLabel = new Label
+            {
+                Location = new Point(710, 10),
+                AutoSize = true,
+                Text = "铚傞福鍣?,
+                Font = new Font("寰蒋闆呴粦", 9F),
+                ForeColor = darkColor
+            };
+
+            Label buzzerLabel = new Label
+            {
+                Location = new Point(710, 35),
+                Size = new Size(60, 25),
+                Text = "鍏抽棴",
+                Font = new Font("寰蒋闆呴粦", 12F, FontStyle.Bold),
+                ForeColor = darkColor,
+                TextAlign = ContentAlignment.MiddleLeft
+            };
+
+            dataPanel.Controls.AddRange(new Control[] {
+                tempIconPictureBox, tempTitleLabel, tempLabel, tempUnitLabel,
+                humIconPictureBox, humTitleLabel, humLabel, humUnitLabel,
+                waterIconPictureBox, waterTitleLabel, waterLabel, waterUnitLabel,
+                airQualityIconPictureBox, airQualityTitleLabel, airQualityLabel,
+                windowIconPictureBox, windowTitleLabel, servoLabel,
+                fanIconPictureBox, fanTitleLabel, motorLabel,
+                buzzerIconPictureBox, buzzerTitleLabel, buzzerLabel
+            });
+
+            // ========== 鎺у埗闈㈡澘 ==========
+            Panel controlDevicePanel = new Panel
+            {
+                Location = new Point(10, 250),
+                Size = new Size(850, 20),
+                BackColor = lightColor,
+                BorderStyle = BorderStyle.None
+            };
+
+            Label controlTitleLabel = new Label
+            {
+                Location = new Point(0, 0),
+                AutoSize = true,
+                Text = "璁惧鎺у埗",
+                Font = new Font("寰蒋闆呴粦", 10F, FontStyle.Bold),
+                ForeColor = darkColor
+            };
+
+            modeStatusLabel = new Label
+            {
+                Location = new Point(100, 2),
+                AutoSize = true,
+                Text = "鈼?鑷姩妯″紡",
+                Font = new Font("寰蒋闆呴粦", 9F),
+                ForeColor = successColor
+            };
+
+            modeAutoButton = CreateStyledButton("鑷姩妯″紡", new Point(200, -2), new Size(80, 24), successColor);
+            modeAutoButton.Click += ModeAutoButton_Click;
+
+            modeManualButton = CreateStyledButton("鎵嬪姩妯″紡", new Point(290, -2), new Size(80, 24), warningColor);
+            modeManualButton.Click += ModeManualButton_Click;
+
+            servoOffButton = CreateStyledButton("绐楁埛鍏?, new Point(400, -2), new Size(70, 24), primaryColor);
+            servoOffButton.Click += ServoOffButton_Click;
+            servoOffButton.Enabled = false;
+
+            servoOnButton = CreateStyledButton("绐楁埛寮€", new Point(480, -2), new Size(70, 24), primaryColor);
+            servoOnButton.Click += ServoOnButton_Click;
+            servoOnButton.Enabled = false;
+
+            motorOffButton = CreateStyledButton("椋庢墖鍏?, new Point(580, -2), new Size(70, 24), primaryColor);
+            motorOffButton.Click += MotorOffButton_Click;
+            motorOffButton.Enabled = false;
+
+            motorOnButton = CreateStyledButton("椋庢墖寮€", new Point(660, -2), new Size(70, 24), primaryColor);
+            motorOnButton.Click += MotorOnButton_Click;
+            motorOnButton.Enabled = false;
+
+            controlDevicePanel.Controls.AddRange(new Control[] {
+                controlTitleLabel, modeStatusLabel,
+                modeAutoButton, modeManualButton,
+                servoOffButton, servoOnButton,
+                motorOffButton, motorOnButton
+            });
+
+            // ========== 鍥捐〃闈㈡澘 ==========
+            Label chartLabel = new Label
+            {
+                Location = new Point(10, 280),
+                AutoSize = true,
+                Text = "鍘嗗彶鏁版嵁鍥捐〃 (鏈€杩?00缁勬暟鎹?",
+                Font = new Font("寰蒋闆呴粦", 10F, FontStyle.Bold),
+                ForeColor = darkColor
+            };
+
+            chartPanel = new Panel
+            {
+                Location = new Point(10, 305),
+                Size = new Size(440, 440),
+                BackColor = chartBgColor,
+                BorderStyle = BorderStyle.None
+            };
+            chartPanel.Paint += ChartPanel_Paint;
+
+            // ========== 瑙嗛鐩戞帶闈㈡澘 ==========
+            videoLabel = new Label
+            {
+                Location = new Point(470, 280),
+                AutoSize = true,
+                Text = "瑙嗛鐩戞帶",
+                Font = new Font("寰蒋闆呴粦", 10F, FontStyle.Bold),
+                ForeColor = darkColor
+            };
+
+            videoPictureBox = new PictureBox
+            {
+                Location = new Point(470, 305),
+                Size = new Size(320, 240),
+                BackColor = Color.Black,
+                BorderStyle = BorderStyle.FixedSingle,
+                SizeMode = PictureBoxSizeMode.Zoom
+            };
+
+            Label videoIpLabel = new Label
+            {
+                Location = new Point(470, 555),
+                AutoSize = true,
+                Text = "ESP32鍦板潃:",
+                Font = new Font("寰蒋闆呴粦", 9F),
+                ForeColor = darkColor
+            };
+
+            videoIpTextBox = new TextBox
+            {
+                Location = new Point(545, 553),
+                Width = 180,
+                Text = "http://192.168.1.100",
+                Font = new Font("寰蒋闆呴粦", 9F)
+            };
+
+            videoConnectButton = CreateStyledButton("杩炴帴", new Point(470, 585), new Size(70, 27), successColor);
+            videoConnectButton.Click += VideoConnectButton_Click;
+
+            videoDisconnectButton = CreateStyledButton("鏂紑", new Point(550, 585), new Size(70, 27), dangerColor);
+            videoDisconnectButton.Click += VideoDisconnectButton_Click;
+            videoDisconnectButton.Enabled = false;
+
+            videoStatusLabel = new Label
+            {
+                Location = new Point(630, 590),
+                AutoSize = true,
+                Text = "鈼?鏈繛鎺?,
+                Font = new Font("寰蒋闆呴粦", 9F, FontStyle.Bold),
+                ForeColor = Color.Gray
+            };
+
+            // ========== 鏃ュ織闈㈡澘 ==========
+            logLabel = new Label
+            {
+                Location = new Point(940, 130),
+                AutoSize = true,
+                Text = "鎺ユ敹鏃ュ織",
+                Font = new Font("寰蒋闆呴粦", 10F, FontStyle.Bold),
+                ForeColor = darkColor
+            };
+
+            autoScrollCheckBox = new CheckBox
+            {
+                Location = new Point(1240, 130),
+                AutoSize = true,
+                Text = "鑷姩婊氬姩",
+                Font = new Font("寰蒋闆呴粦", 9F),
+                Checked = true
+            };
+
+            logTextBox = new TextBox
+            {
+                Location = new Point(940, 155),
+                Size = new Size(370, 520),
+                Multiline = true,
+                ReadOnly = true,
+                ScrollBars = ScrollBars.Vertical,
+                BackColor = Color.White,
+                Font = new Font("Consolas", 9F),
+                BorderStyle = BorderStyle.FixedSingle
+            };
+
+            // 娣诲姞鎵€鏈夋帶浠跺埌绐椾綋
+            this.Controls.AddRange(new Control[] {
+                controlPanel, dataPanel,
+                controlDevicePanel, chartLabel, chartPanel,
+                videoLabel, videoIpLabel, videoIpTextBox, videoConnectButton, videoDisconnectButton,
+                videoStatusLabel, videoPictureBox,
+                logLabel, autoScrollCheckBox, logTextBox
+            });
+
+            this.ResumeLayout(false);
+            this.PerformLayout();
+        }
+
+        // 鍒涘缓鏍峰紡鍖栨寜閽?
+        private Button CreateStyledButton(string text, Point location, Size size, Color backColor)
+        {
+            Button btn = new Button
+            {
+                Text = text,
+                Location = location,
+                Size = size,
+                BackColor = backColor,
+                ForeColor = Color.White,
+                FlatStyle = FlatStyle.Flat,
+                Font = new Font("寰蒋闆呴粦", 9F, FontStyle.Bold),
+                Cursor = Cursors.Hand
+            };
+            btn.FlatAppearance.BorderSize = 0;
+            btn.FlatAppearance.MouseOverBackColor = ControlPaint.Light(backColor, 0.2f);
+            btn.FlatAppearance.MouseDownBackColor = ControlPaint.Dark(backColor, 0.1f);
+            return btn;
+        }
+
+        // 瀹夊叏鍔犺浇鍥炬爣
+        private Image LoadIconSafely(string relativePath)
+        {
+            try
+            {
+                string iconPath = Path.Combine(Application.StartupPath, relativePath);
+                if (File.Exists(iconPath))
+                {
+                    return Image.FromFile(iconPath);
+                }
+                else
+                {
+                    LogMessage($"璀﹀憡: 鍥炬爣鏂囦欢涓嶅瓨鍦? {iconPath}");
+                    return null;
+                }
+            }
+            catch (Exception ex)
+            {
+                LogMessage($"閿欒: 鍔犺浇鍥炬爣澶辫触 - {ex.Message}");
+                return null;
+            }
+        }
+
+        // 鍔犺浇鍦嗗舰澶村儚
+        private void LoadCircularAvatar()
+        {
+            try
+            {
+                string avatarPath = Path.Combine(Application.StartupPath, "ICON\\鐖卞悆姗樺瓙.jpg");
+                if (File.Exists(avatarPath))
+                {
+                    Image originalImage = Image.FromFile(avatarPath);
+                    Image circularImage = CreateCircularImage(originalImage, 60);
+                    avatarPictureBox.Image = circularImage;
+                }
+                else
+                {
+                    LogMessage($"璀﹀憡: 澶村儚鏂囦欢涓嶅瓨鍦? {avatarPath}");
+                }
+            }
+            catch (Exception ex)
+            {
+                LogMessage($"閿欒: 鍔犺浇澶村儚澶辫触 - {ex.Message}");
+            }
+        }
+
+        // 鍒涘缓鍦嗗舰鍥剧墖
+        private Image CreateCircularImage(Image sourceImage, int size)
+        {
+            Bitmap bitmap = new Bitmap(size, size);
+            using (Graphics g = Graphics.FromImage(bitmap))
+            {
+                g.SmoothingMode = SmoothingMode.AntiAlias;
+                g.InterpolationMode = InterpolationMode.HighQualityBicubic;
+
+                // 鍒涘缓鍦嗗舰璺緞
+                using (GraphicsPath path = new GraphicsPath())
+                {
+                    path.AddEllipse(0, 0, size, size);
+                    g.SetClip(path);
+
+                    // 缁樺埗鍥剧墖
+                    g.DrawImage(sourceImage, 0, 0, size, size);
+                }
+
+                // 缁樺埗鍦嗗舰杈规
+                using (Pen pen = new Pen(Color.FromArgb(220, 220, 220), 2))
+                {
+                    g.ResetClip();
+                    g.DrawEllipse(pen, 1, 1, size - 2, size - 2);
+                }
+            }
+            return bitmap;
+        }
+
+        // 鏇存柊鎶ヨ鐘舵€?
+        private void UpdateAlarmStatus(double temp, double hum)
+        {
+            // 妫€鏌ユ俯搴︽姤璀?
+            bool tempAlarmNew = (temp < _tempMin || temp > _tempMax);
+            if (tempAlarmNew != _tempAlarm)
+            {
+                _tempAlarm = tempAlarmNew;
+                if (_tempAlarm)
+                {
+                    tempIconPictureBox.Image = LoadIconSafely("ICON\\娓╁害_鎶ヨ鐘舵€?png");
+                    LogMessage($"鈿?娓╁害鎶ヨ锛佸綋鍓? {temp:F1}掳C, 闃堝€? {_tempMin:F1}~{_tempMax:F1}掳C", warningColor);
+                }
+                else
+                {
+                    tempIconPictureBox.Image = LoadIconSafely("ICON\\娓╁害.png");
+                    LogMessage($"鉁?娓╁害鎭㈠姝ｅ父: {temp:F1}掳C", successColor);
+                }
+            }
+
+            // 妫€鏌ユ箍搴︽姤璀?
+            bool humAlarmNew = (hum < _humMin || hum > _humMax);
+            if (humAlarmNew != _humAlarm)
+            {
+                _humAlarm = humAlarmNew;
+                if (_humAlarm)
+                {
+                    humIconPictureBox.Image = LoadIconSafely("ICON\\婀垮害_鎶ヨ鐘舵€?png");
+                    LogMessage($"鈿?婀垮害鎶ヨ锛佸綋鍓? {hum:F1}%, 闃堝€? {_humMin:F1}~{_humMax:F1}%", warningColor);
+                }
+                else
+                {
+                    humIconPictureBox.Image = LoadIconSafely("ICON\\婀垮害.png");
+                    LogMessage($"鉁?婀垮害鎭㈠姝ｅ父: {hum:F1}%", successColor);
+                }
+            }
+        }
+
+        // 鑾峰彇褰撳墠鎶ヨ绫诲瀷
+        private string GetAlarmType(double temp, double hum)
+        {
+            bool tempAlarm = (temp < _tempMin || temp > _tempMax);
+            bool humAlarm = (hum < _humMin || hum > _humMax);
+
+            if (tempAlarm && humAlarm)
+                return "娓╁害婀垮害鎶ヨ";
+            else if (tempAlarm)
+                return "娓╁害鎶ヨ";
+            else if (humAlarm)
+                return "婀垮害鎶ヨ";
+            else
+                return "姝ｅ父";
+        }
+
+        // 鎺у埗闈㈡澘缁樺埗杈规
+        private void ControlPanel_Paint(object sender, PaintEventArgs e)
+        {
+            Panel panel = sender as Panel;
+            using (Pen pen = new Pen(Color.FromArgb(220, 220, 220), 1))
+            {
+                e.Graphics.DrawLine(pen, 0, panel.Height - 1, panel.Width, panel.Height - 1);
+            }
+        }
+
+        // 鏁版嵁闈㈡澘缁樺埗鍦嗚杈规
+        private void DataPanel_Paint(object sender, PaintEventArgs e)
+        {
+            Panel panel = sender as Panel;
+            using (Pen pen = new Pen(Color.FromArgb(220, 220, 220), 2))
+            {
+                Rectangle rect = new Rectangle(0, 0, panel.Width - 1, panel.Height - 1);
+                DrawRoundedRectangle(e.Graphics, rect, 8, pen);
+            }
+        }
+
+        // 缁樺埗鍦嗚鐭╁舰
+        private void DrawRoundedRectangle(Graphics graphics, Rectangle bounds, int cornerRadius, Pen drawPen)
+        {
+            using (GraphicsPath path = new GraphicsPath())
+            {
+                path.AddArc(bounds.X, bounds.Y, cornerRadius, cornerRadius, 180, 90);
+                path.AddArc(bounds.X + bounds.Width - cornerRadius, bounds.Y, cornerRadius, cornerRadius, 270, 90);
+                path.AddArc(bounds.X + bounds.Width - cornerRadius, bounds.Y + bounds.Height - cornerRadius, cornerRadius, cornerRadius, 0, 90);
+                path.AddArc(bounds.X, bounds.Y + bounds.Height - cornerRadius, cornerRadius, cornerRadius, 90, 90);
+                path.CloseAllFigures();
+                graphics.DrawPath(drawPen, path);
+            }
+        }
+
+        private void InitializeSerialPort()
+        {
+            _serialPort = new SerialPort
+            {
+                Parity = Parity.None,
+                StopBits = StopBits.One,
+                DataBits = 8,
+                Handshake = Handshake.None,
+                RtsEnable = true,      // 鍚敤RTS淇″彿
+                DtrEnable = true,      // 鍚敤DTR淇″彿
+                ReadTimeout = 500,
+                WriteTimeout = 500,
+                Encoding = Encoding.UTF8,  // 浣跨敤UTF8缂栫爜
+                NewLine = "\r\n"  // 璁剧疆鎹㈣绗︿负\r\n
+            };
+            _serialPort.DataReceived += SerialPort_DataReceived;
+        }
+
+        private void InitializeChart()
+        {
+            _tempHistory.Clear();
+            _humHistory.Clear();
+        }
+
+        private void LoadAvailablePorts()
+        {
+            try
+            {
+                comPortComboBox.Items.Clear();
+                var ports = SerialPort.GetPortNames();
+                if (ports.Length > 0)
+                {
+                    comPortComboBox.Items.AddRange(ports);
+                    comPortComboBox.SelectedIndex = 0;
+                    LogMessage($"妫€娴嬪埌 {ports.Length} 涓覆鍙? {string.Join(", ", ports)}");
+                }
+                else
+                {
+                    comPortComboBox.Items.Add("鏃犲彲鐢ㄤ覆鍙?);
+                    comPortComboBox.SelectedIndex = 0;
+                    LogMessage("璀﹀憡: 鏈娴嬪埌鍙敤涓插彛锛?);
+                }
+            }
+            catch (Exception ex)
+            {
+                comPortComboBox.Items.Add("鏃犲彲鐢ㄤ覆鍙?);
+                comPortComboBox.SelectedIndex = 0;
+                LogMessage($"閿欒: 鏋氫妇涓插彛澶辫触 - {ex.Message}");
+            }
+        }
+
+        private void RefreshButton_Click(object sender, EventArgs e)
+        {
+            LoadAvailablePorts();
+        }
+
+        private void BaudRateComboBox_SelectedIndexChanged(object sender, EventArgs e)
+        {
+            if (baudRateComboBox.SelectedItem != null && _serialPort != null && !_serialPort.IsOpen)
+            {
+                if (int.TryParse(baudRateComboBox.SelectedItem.ToString(), out int br))
+                {
+                    _serialPort.BaudRate = br;
+                    LogMessage($"娉㈢壒鐜囪缃负: {br}");
+                }
+            }
+        }
+
+        private void OpenButton_Click(object sender, EventArgs e)
+        {
+            if (_serialPort == null) InitializeSerialPort();
+
+            if (_serialPort.IsOpen) return;
+
+            if (comPortComboBox.SelectedIndex == -1 || comPortComboBox.SelectedItem.ToString() == "鏃犲彲鐢ㄤ覆鍙?)
+            {
+                MessageBox.Show("璇烽€夋嫨鏈夋晥鐨勪覆鍙ｏ紒", "閿欒", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                return;
+            }
+
+            try
+            {
+                _serialPort.PortName = comPortComboBox.SelectedItem.ToString();
+                if (int.TryParse(baudRateComboBox.SelectedItem.ToString(), out int br))
+                    _serialPort.BaudRate = br;
+
+                _serialPort.Open();
+                _receivedBuffer.Clear();
+
+                openButton.Enabled = false;
+                closeButton.Enabled = true;
+                comPortComboBox.Enabled = false;
+                baudRateComboBox.Enabled = false;
+                refreshButton.Enabled = false;
+
+                lblStatus.Text = "鈼?宸茶繛鎺?;
+                lblStatus.ForeColor = successColor;
+
+                LogMessage($"鎴愬姛杩炴帴鍒?{_serialPort.PortName}锛屾尝鐗圭巼: {_serialPort.BaudRate}");
+                LogMessage("绛夊緟鎺ユ敹鏁版嵁...");
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"涓插彛鎵撳紑澶辫触:\n{ex.Message}", "閿欒", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                LogMessage($"閿欒: 鎵撳紑涓插彛澶辫触 - {ex.Message}");
+            }
+        }
+
+        private void CloseButton_Click(object sender, EventArgs e)
+        {
+            CloseSerialPort();
+        }
+
+        private void CloseSerialPort()
+        {
+            try
+            {
+                if (_serialPort != null && _serialPort.IsOpen)
+                {
+                    _serialPort.Close();
+                    LogMessage($"宸叉柇寮€涓插彛 {_serialPort.PortName}");
+                }
+            }
+            catch (Exception ex)
+            {
+                LogMessage($"閿欒: 鍏抽棴涓插彛澶辫触 - {ex.Message}");
+            }
+
+            openButton.Enabled = true;
+            closeButton.Enabled = false;
+            comPortComboBox.Enabled = true;
+            baudRateComboBox.Enabled = true;
+            refreshButton.Enabled = true;
+
+            lblStatus.Text = "鈼?鏈繛鎺?;
+            lblStatus.ForeColor = Color.Gray;
+        }
+
+        private void ClearButton_Click(object sender, EventArgs e)
+        {
+            _tempHistory.Clear();
+            _humHistory.Clear();
+            _waterHistory.Clear();
+            _timestampHistory.Clear();
+            _alarmTypeHistory.Clear();
+            _airQualityHistory.Clear();
+            _servoStatusHistory.Clear();
+            _motorStatusHistory.Clear();
+            tempLabel.Text = "--.-";
+            humLabel.Text = "--.-";
+            chartPanel.Invalidate();
+            LogMessage("宸叉竻绌哄巻鍙叉暟鎹?);
+        }
+
+        private void ExportButton_Click(object sender, EventArgs e)
+        {
+            if (_tempHistory.Count == 0)
+            {
+                MessageBox.Show("娌℃湁鏁版嵁鍙鍑猴紒", "鎻愮ず", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                return;
+            }
+
+            using (SaveFileDialog sfd = new SaveFileDialog())
+            {
+                sfd.Filter = "CSV鏂囦欢|*.csv|鎵€鏈夋枃浠秥*.*";
+                sfd.FileName = $"DHT11鏁版嵁_{DateTime.Now:yyyyMMdd_HHmmss}.csv";
+
+                if (sfd.ShowDialog() == DialogResult.OK)
+                {
+                    try
+                    {
+                        using (StreamWriter sw = new StreamWriter(sfd.FileName, false, Encoding.UTF8))
+                        {
+                            // 鍐欏叆CSV鏍囬琛?
+                            sw.WriteLine("搴忓彿,娓╁害(掳C),婀垮害(%),姘翠綅(%),绌烘皵璐ㄩ噺,绐楁埛鐘舵€?椋庢墖鐘舵€?鎶ヨ绫诲瀷,鏃堕棿鎴?);
+
+                            // 鍐欏叆鏁版嵁琛?
+                            for (int i = 0; i < _tempHistory.Count; i++)
+                            {
+                                string timestamp = i < _timestampHistory.Count ? _timestampHistory[i] : "";
+                                string alarmType = i < _alarmTypeHistory.Count ? _alarmTypeHistory[i] : "姝ｅ父";
+                                string airQuality = i < _airQualityHistory.Count ? _airQualityHistory[i] : "";
+                                string servoStatus = i < _servoStatusHistory.Count ? _servoStatusHistory[i] : "";
+                                string motorStatus = i < _motorStatusHistory.Count ? _motorStatusHistory[i] : "";
+                                double waterLevel = i < _waterHistory.Count ? _waterHistory[i] : 0;
+
+                                sw.WriteLine($"{i + 1},{_tempHistory[i]:F1},{_humHistory[i]:F1},{waterLevel:F0},{airQuality},{servoStatus},{motorStatus},{alarmType},{timestamp}");
+                            }
+                        }
+                        LogMessage($"鏁版嵁宸插鍑哄埌: {sfd.FileName}");
+                        MessageBox.Show("鏁版嵁瀵煎嚭鎴愬姛锛?, "鎴愬姛", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                    }
+                    catch (Exception ex)
+                    {
+                        MessageBox.Show($"瀵煎嚭澶辫触:\n{ex.Message}", "閿欒", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                        LogMessage($"閿欒: 瀵煎嚭鏁版嵁澶辫触 - {ex.Message}");
+                    }
+                }
+            }
+        }
+
+        // 鍏抽敭淇锛氭敼杩涚殑涓插彛鏁版嵁鎺ユ敹澶勭悊
+        private void SerialPort_DataReceived(object sender, SerialDataReceivedEventArgs e)
+        {
+            try
+            {
+                // 璇诲彇鎵€鏈夊彲鐢ㄦ暟鎹埌缂撳啿鍖?
+                int bytesToRead = _serialPort.BytesToRead;
+                byte[] buffer = new byte[bytesToRead];
+                _serialPort.Read(buffer, 0, bytesToRead);
+                string data = Encoding.UTF8.GetString(buffer);
+
+                _receivedBuffer.Append(data);
+
+                // 澶勭悊缂撳啿鍖轰腑鐨勫畬鏁磋锛堟敮鎸佸绉嶆崲琛岀锛?
+                string bufferContent = _receivedBuffer.ToString();
+                string[] lines = bufferContent.Split(new[] { "\r\n", "\r", "\n" }, StringSplitOptions.None);
+
+                // 澶勭悊闄ゆ渶鍚庝竴涓厓绱犲鐨勬墍鏈夎锛堟渶鍚庝竴涓彲鑳戒笉瀹屾暣锛?
+                for (int i = 0; i < lines.Length - 1; i++)
+                {
+                    string line = lines[i].Trim();
+                    if (!string.IsNullOrEmpty(line))
+                    {
+                        ProcessReceivedLine(line);
+                    }
+                }
+
+                // 淇濈暀鏈€鍚庝竴涓笉瀹屾暣鐨勯儴鍒?
+                _receivedBuffer.Clear();
+                _receivedBuffer.Append(lines[lines.Length - 1]);
+
+                // 闃叉缂撳啿鍖烘棤闄愬闀?
+                if (_receivedBuffer.Length > 1000)
+                {
+                    _receivedBuffer.Clear();
+                }
+            }
+            catch (Exception ex)
+            {
+                LogMessage($"鏁版嵁鎺ユ敹閿欒: {ex.Message}");
+            }
+        }
+
+        private void ProcessReceivedLine(string line)
+        {
+            try
+            {
+                // 璁板綍鍘熷鏁版嵁
+                this.Invoke((MethodInvoker)delegate
+                {
+                    LogMessage($"鎺ユ敹: {line}");
+                });
+
+                // 瑙ｆ瀽鏁版嵁
+                var parsed = ParseData(line);
+                if (parsed.HasValue)
+                {
+                    var p = parsed.Value;
+                    string timestamp = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss");
+                    this.Invoke((MethodInvoker)delegate
+                    {
+                        tempLabel.Text = $"{p.Temp:F1}";
+                        humLabel.Text = $"{p.Hum:F1}";
+                        waterLabel.Text = $"{_waterLevel}";
+                        airQualityLabel.Text = $"{_airQuality}";
+                        servoLabel.Text = _servoStatus == "ON" ? "寮€鍚? : "鍏抽棴";
+                        motorLabel.Text = _motorStatus == "ON" ? "寮€鍚? : "鍏抽棴";
+
+                        // 鏇存柊绌烘皵璐ㄩ噺鍥炬爣鍜岄鑹?
+                        if (_airQuality == "bad")
+                        {
+                            airQualityIconPictureBox.Image = LoadIconSafely("ICON\\绌烘皵璐ㄩ噺鍔ｇ姸鎬?png");
+                            airQualityLabel.ForeColor = dangerColor;
+                        }
+                        else
+                        {
+                            airQualityIconPictureBox.Image = LoadIconSafely("ICON\\绌烘皵璐ㄩ噺浼樼姸鎬?png");
+                            airQualityLabel.ForeColor = successColor;
+                        }
+
+                        // 鏇存柊姘翠綅鍥炬爣
+                        if (_waterLevel > 50)
+                        {
+                            waterIconPictureBox.Image = LoadIconSafely("ICON\\姘翠綅_鎶ヨ鐘舵€?png");
+                        }
+                        else
+                        {
+                            waterIconPictureBox.Image = LoadIconSafely("ICON\\姘翠綅.png");
+                        }
+
+                        // 鏇存柊绐楁埛鍥炬爣
+                        if (_servoStatus == "ON")
+                        {
+                            windowIconPictureBox.Image = LoadIconSafely("ICON\\绐楁埛-寮€鐘舵€?png");
+                        }
+                        else
+                        {
+                            windowIconPictureBox.Image = LoadIconSafely("ICON\\绐楁埛-鍏崇姸鎬?png");
+                        }
+
+                        // 鏇存柊椋庢墖鍥炬爣
+                        if (_motorStatus == "ON")
+                        {
+                            fanIconPictureBox.Image = LoadIconSafely("ICON\\椋庢墖-寮€鐘舵€?png");
+                        }
+                        else
+                        {
+                            fanIconPictureBox.Image = LoadIconSafely("ICON\\椋庢墖-鍏崇姸鎬?png");
+                        }
+
+                        // 鏇存柊铚傞福鍣ㄥ浘鏍囷紙鏍规嵁鎶ヨ鐘舵€侊級
+                        bool hasAlarm = (p.Temp < _tempMin || p.Temp > _tempMax) ||
+                                       (p.Hum < _humMin || p.Hum > _humMax) ||
+                                       (_waterLevel > 50) ||
+                                       (_airQuality == "bad");
+                        if (hasAlarm)
+                        {
+                            buzzerIconPictureBox.Image = LoadIconSafely("ICON\\铚傞福鍣?寮€鐘舵€?png");
+                        }
+                        else
+                        {
+                            buzzerIconPictureBox.Image = LoadIconSafely("ICON\\铚傞福鍣?鍏崇姸鎬?png");
+                        }
+
+                        // 鑾峰彇鎶ヨ绫诲瀷
+                        string alarmType = GetAlarmType(p.Temp, p.Hum);
+
+                        // 娣诲姞鍒板浘琛紝鍖呭惈鏃堕棿鎴冲拰鎶ヨ绫诲瀷
+                        AddToChart(p.Temp, p.Hum, _waterLevel, timestamp, alarmType);
+                        chartPanel.Invalidate();
+                        LogMessage($"瑙ｆ瀽鎴愬姛: 娓╁害={p.Temp:F1}掳C, 婀垮害={p.Hum:F1}%, 姘翠綅={_waterLevel}%", Color.Green);
+
+                        // 妫€鏌ユ姤璀︾姸鎬?
+                        UpdateAlarmStatus(p.Temp, p.Hum);
+
+                        // 鍙戝竷鏁版嵁鍒癕QTT
+                        PublishDataToMqtt(p.Temp, p.Hum);
+                    });
+                }
+                else
+                {
+                    this.Invoke((MethodInvoker)delegate
+                    {
+                        LogMessage($"瑙ｆ瀽澶辫触: 鏁版嵁鏍煎紡涓嶆纭?, Color.Red);
+                    });
+                }
+            }
+            catch (Exception ex)
+            {
+                this.Invoke((MethodInvoker)delegate
+                {
+                    LogMessage($"澶勭悊鏁版嵁寮傚父: {ex.Message}", Color.Red);
+                });
+            }
+        }
+
+        private (double Temp, double Hum)? ParseData(string raw)
+        {
+            try
+            {
+                string s = raw.Trim();
+                if (string.IsNullOrEmpty(s)) return null;
+
+                // 鍥哄畾浣跨敤STM32鏍煎紡瑙ｆ瀽: Temp:XXC   Humi:XX%RH
+                var tempMatch = Regex.Match(s, @"Temp:(\d+)C");
+                var humMatch = Regex.Match(s, @"Humi:(\d+)%RH");
+
+                if (!tempMatch.Success || !humMatch.Success) return null;
+                if (tempMatch.Groups.Count < 2 || humMatch.Groups.Count < 2) return null;
+
+                if (!double.TryParse(tempMatch.Groups[1].Value, out double temp)) return null;
+                if (!double.TryParse(humMatch.Groups[1].Value, out double hum)) return null;
+
+                // 瑙ｆ瀽STM32鎵╁睍鏁版嵁
+                ParseSTM32ExtendedData(s);
+
+                // 鍚堢悊鎬ф鏌?
+                if (temp < -50 || temp > 100) return null;
+                if (hum < 0 || hum > 100) return null;
+
+                return (temp, hum);
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"ParseData寮傚父: {ex.Message}");
+                return null;
+            }
+        }
+
+        // 瑙ｆ瀽STM32鎵╁睍鏁版嵁
+        private void ParseSTM32ExtendedData(string data)
+        {
+            try
+            {
+                // 瑙ｆ瀽姘翠綅: Water:XX%
+                var waterMatch = Regex.Match(data, @"Water:(\d+)%");
+                if (waterMatch.Success)
+                {
+                    _waterLevel = int.Parse(waterMatch.Groups[1].Value);
+                }
+
+                // 瑙ｆ瀽鑸垫満鐘舵€? Servo:ON/OFF
+                var servoMatch = Regex.Match(data, @"Servo:(ON|OFF)");
+                if (servoMatch.Success)
+                {
+                    _servoStatus = servoMatch.Groups[1].Value;
+                }
+
+                // 瑙ｆ瀽鐢垫満鐘舵€? Motor:ON/OFF
+                var motorMatch = Regex.Match(data, @"Motor:(ON|OFF)");
+                if (motorMatch.Success)
+                {
+                    _motorStatus = motorMatch.Groups[1].Value;
+                }
+
+                // 瑙ｆ瀽绌烘皵璐ㄩ噺: Air:nice/bad
+                var airMatch = Regex.Match(data, @"Air:(nice|bad)");
+                if (airMatch.Success)
+                {
+                    _airQuality = airMatch.Groups[1].Value;
+                }
+
+                // 妫€鏌ユ槸鍚︽湁Warning
+                _hasWarning = data.Contains("Warning");
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"ParseSTM32ExtendedData寮傚父: {ex.Message}");
+            }
+        }
+
+        private void AddToChart(double temp, double hum, double water, string timestamp, string alarmType)
+        {
+            _tempHistory.Add(temp);
+            _humHistory.Add(hum);
+            _waterHistory.Add(water);
+            _timestampHistory.Add(timestamp);
+            _alarmTypeHistory.Add(alarmType);
+            _airQualityHistory.Add(_airQuality);
+            _servoStatusHistory.Add(_servoStatus);
+            _motorStatusHistory.Add(_motorStatus);
+            if (_tempHistory.Count > MaxHistoryPoints)
+            {
+                _tempHistory.RemoveAt(0);
+                _humHistory.RemoveAt(0);
+                _waterHistory.RemoveAt(0);
+                _timestampHistory.RemoveAt(0);
+                _alarmTypeHistory.RemoveAt(0);
+                _airQualityHistory.RemoveAt(0);
+                _servoStatusHistory.RemoveAt(0);
+                _motorStatusHistory.RemoveAt(0);
+            }
+        }
+
+        private void LogMessage(string message, Color? color = null)
+        {
+            try
+            {
+                string timestamp = DateTime.Now.ToString("HH:mm:ss.fff");
+                string logEntry = $"[{timestamp}] {message}\r\n";
+
+                _logBuffer.Append(logEntry);
+
+                // 闄愬埗鏃ュ織缂撳啿鍖哄ぇ灏?
+                if (_logBuffer.Length > 50000)
+                {
+                    _logBuffer.Remove(0, 10000);
+                }
+
+                if (logTextBox.InvokeRequired)
+                {
+                    logTextBox.Invoke((MethodInvoker)delegate
+                    {
+                        UpdateLogTextBox(logEntry);
+                    });
+                }
+                else
+                {
+                    UpdateLogTextBox(logEntry);
+                }
+            }
+            catch { }
+        }
+
+        private void UpdateLogTextBox(string logEntry)
+        {
+            logTextBox.AppendText(logEntry);
+            if (autoScrollCheckBox.Checked)
+            {
+                logTextBox.SelectionStart = logTextBox.Text.Length;
+                logTextBox.ScrollToCaret();
+            }
+        }
+
+        private void ChartPanel_Paint(object sender, PaintEventArgs e)
+        {
+            var g = e.Graphics;
+            g.SmoothingMode = SmoothingMode.AntiAlias;
+            g.Clear(chartBgColor);
+
+            var rect = chartPanel.ClientRectangle;
+            int leftMargin = 60;
+            int rightMargin = 60;
+            int topMargin = 30;
+            int bottomMargin = 50;
+
+            int left = rect.Left + leftMargin;
+            int top = rect.Top + topMargin;
+            int right = rect.Right - rightMargin;
+            int bottom = rect.Bottom - bottomMargin;
+
+            if (right <= left || bottom <= top) return;
+
+            // 缁樺埗鑳屾櫙缃戞牸
+            DrawGrid(g, left, top, right, bottom);
+
+            // 缁樺埗鍧愭爣杞?
+            using (var axisPen = new Pen(darkColor, 2))
+            {
+                g.DrawLine(axisPen, left, top, left, bottom);           // Y杞?
+                g.DrawLine(axisPen, left, bottom, right, bottom);       // X杞?
+            }
+
+            // 缁樺埗Y杞村埢搴?(宸︿晶锛氭俯搴?0-40掳C)
+            DrawTemperatureYAxis(g, left, top, bottom);
+
+            // 缁樺埗Y杞村埢搴?(鍙充晶锛氭箍搴?0-100%)
+            DrawHumidityYAxis(g, right, top, bottom);
+
+            // 缁樺埗X杞村埢搴?
+            DrawXAxis(g, left, right, bottom);
+
+            // 缁樺埗鏁版嵁鏇茬嚎
+            if (_tempHistory.Count > 1)
+                DrawTemperatureSeries(g, _tempHistory, left, top, right, bottom);
+            if (_humHistory.Count > 1)
+                DrawHumiditySeries(g, _humHistory, left, top, right, bottom);
+            if (_waterHistory.Count > 1)
+                DrawWaterSeries(g, _waterHistory, left, top, right, bottom);
+
+            // 缁樺埗鍥句緥
+            DrawLegend(g, right - 150, top);
+
+            // 缁樺埗鏍囬
+            using (var titleFont = new Font("寰蒋闆呴粦", 11F, FontStyle.Bold))
+            {
+                string title = $"鏁版嵁鐐规暟: {_tempHistory.Count}/{MaxHistoryPoints}";
+                g.DrawString(title, titleFont, new SolidBrush(darkColor), left, top - 25);
+            }
+        }
+
+        private void DrawGrid(Graphics g, int left, int top, int right, int bottom)
+        {
+            using (var gridPen = new Pen(Color.FromArgb(230, 230, 230), 1))
+            {
+                gridPen.DashStyle = DashStyle.Dot;
+
+                // 姘村钩缃戞牸绾?
+                int hSteps = 8;
+                for (int i = 0; i <= hSteps; i++)
+                {
+                    int y = top + (bottom - top) * i / hSteps;
+                    g.DrawLine(gridPen, left, y, right, y);
+                }
+
+                // 鍨傜洿缃戞牸绾?
+                int vSteps = 10;
+                for (int i = 0; i <= vSteps; i++)
+                {
+                    int x = left + (right - left) * i / vSteps;
+                    g.DrawLine(gridPen, x, top, x, bottom);
+                }
+            }
+        }
+
+        private void DrawTemperatureYAxis(Graphics g, int x, int top, int bottom)
+        {
+            using (var font = new Font("Arial", 9F))
+            using (var brush = new SolidBrush(dangerColor))
+            {
+                int steps = 8;
+                for (int i = 0; i <= steps; i++)
+                {
+                    int y = bottom - (bottom - top) * i / steps;
+                    double value = 40.0 * i / steps;  // 0-40搴?
+
+                    // 鍒诲害绾?
+                    g.DrawLine(new Pen(darkColor, 1), x - 5, y, x, y);
+
+                    // 鍒诲害鍊?
+                    string label = value.ToString("F0");
+                    SizeF size = g.MeasureString(label, font);
+                    g.DrawString(label, font, brush, x - size.Width - 10, y - size.Height / 2);
+                }
+
+                // Y杞存爣绛?
+                using (var labelFont = new Font("寰蒋闆呴粦", 10F, FontStyle.Bold))
+                {
+                    string axisLabel = "娓╁害(掳C)";
+                    SizeF labelSize = g.MeasureString(axisLabel, labelFont);
+                    g.DrawString(axisLabel, labelFont, brush, x - labelSize.Width + 2, top - 25);
+                }
+            }
+        }
+
+        private void DrawHumidityYAxis(Graphics g, int x, int top, int bottom)
+        {
+            using (var font = new Font("Arial", 9F))
+            using (var brush = new SolidBrush(primaryColor))
+            {
+                int steps = 10;
+                for (int i = 0; i <= steps; i++)
+                {
+                    int y = bottom - (bottom - top) * i / steps;
+                    double value = 100.0 * i / steps;  // 0-100%
+
+                    // 鍒诲害绾?
+                    g.DrawLine(new Pen(darkColor, 1), x, y, x + 5, y);
+
+                    // 鍒诲害鍊?
+                    string label = value.ToString("F0");
+                    g.DrawString(label, font, brush, x + 10, y - font.Height / 2);
+                }
+
+                // Y杞存爣绛?
+                using (var labelFont = new Font("寰蒋闆呴粦", 10F, FontStyle.Bold))
+                {
+                    string axisLabel = "婀垮害(%)";
+                    g.DrawString(axisLabel, labelFont, brush, x + 10, top - 25);
+                }
+            }
+        }
+
+        private void DrawXAxis(Graphics g, int left, int right, int bottom)
+        {
+            using (var font = new Font("Arial", 9F))
+            using (var brush = new SolidBrush(darkColor))
+            {
+                // X杞存爣绛?
+                string label = "鏁版嵁搴忓彿 鈫?;
+                SizeF size = g.MeasureString(label, font);
+                g.DrawString(label, font, brush, (left + right) / 2 - size.Width / 2, bottom + 25);
+            }
+        }
+
+        private void DrawTemperatureSeries(Graphics g, List<double> data, int left, int top, int right, int bottom)
+        {
+            int count = data.Count;
+            if (count < 1) return;
+
+            float width = right - left;
+            float height = bottom - top;
+            float xStep = count > 1 ? width / (count - 1) : 0;
+
+            using (var pen = new Pen(dangerColor, 3))
+            using (var shadowPen = new Pen(Color.FromArgb(50, dangerColor), 5))
+            {
+                pen.LineJoin = LineJoin.Round;
+
+                PointF? prev = null;
+                for (int i = 0; i < count; i++)
+                {
+                    float x = left + i * xStep;
+                    double v = data[i];
+
+                    // 鏄犲皠鍒?0-40 搴﹁寖鍥?
+                    float ratio = (float)(v / 40.0);
+                    if (ratio < 0) ratio = 0;
+                    if (ratio > 1) ratio = 1;
+
+                    float y = bottom - ratio * height;
+                    var cur = new PointF(x, y);
+
+                    if (prev.HasValue)
+                    {
+                        g.DrawLine(shadowPen, prev.Value, cur);  // 闃村奖
+                        g.DrawLine(pen, prev.Value, cur);         // 涓荤嚎
+                    }
+
+                    // 缁樺埗鏁版嵁鐐?
+                    g.FillEllipse(new SolidBrush(dangerColor), x - 3, y - 3, 6, 6);
+
+                    prev = cur;
+                }
+            }
+        }
+
+        private void DrawHumiditySeries(Graphics g, List<double> data, int left, int top, int right, int bottom)
+        {
+            int count = data.Count;
+            if (count < 1) return;
+
+            float width = right - left;
+            float height = bottom - top;
+            float xStep = count > 1 ? width / (count - 1) : 0;
+
+            using (var pen = new Pen(primaryColor, 3))
+            using (var shadowPen = new Pen(Color.FromArgb(50, primaryColor), 5))
+            {
+                pen.LineJoin = LineJoin.Round;
+
+                PointF? prev = null;
+                for (int i = 0; i < count; i++)
+                {
+                    float x = left + i * xStep;
+                    double v = data[i];
+
+                    // 鏄犲皠鍒?0-100% 鑼冨洿
+                    float ratio = (float)(v / 100.0);
+                    if (ratio < 0) ratio = 0;
+                    if (ratio > 1) ratio = 1;
+
+                    float y = bottom - ratio * height;
+                    var cur = new PointF(x, y);
+
+                    if (prev.HasValue)
+                    {
+                        g.DrawLine(shadowPen, prev.Value, cur);  // 闃村奖
+                        g.DrawLine(pen, prev.Value, cur);         // 涓荤嚎
+                    }
+
+                    // 缁樺埗鏁版嵁鐐?
+                    g.FillEllipse(new SolidBrush(primaryColor), x - 3, y - 3, 6, 6);
+
+                    prev = cur;
+                }
+            }
+        }
+
+        private void DrawWaterSeries(Graphics g, List<double> data, int left, int top, int right, int bottom)
+        {
+            int count = data.Count;
+            if (count < 1) return;
+
+            float width = right - left;
+            float height = bottom - top;
+            float xStep = count > 1 ? width / (count - 1) : 0;
+
+            Color waterColor = Color.FromArgb(255, 193, 7);  // 榛勮壊
+            using (var pen = new Pen(waterColor, 3))
+            using (var shadowPen = new Pen(Color.FromArgb(50, waterColor), 5))
+            {
+                pen.LineJoin = LineJoin.Round;
+
+                PointF? prev = null;
+                for (int i = 0; i < count; i++)
+                {
+                    float x = left + i * xStep;
+                    double v = data[i];
+
+                    // 鏄犲皠鍒?0-100% 鑼冨洿锛堜笌婀垮害鍏辩敤Y杞达級
+                    float ratio = (float)(v / 100.0);
+                    if (ratio < 0) ratio = 0;
+                    if (ratio > 1) ratio = 1;
+
+                    float y = bottom - ratio * height;
+                    var cur = new PointF(x, y);
+
+                    if (prev.HasValue)
+                    {
+                        g.DrawLine(shadowPen, prev.Value, cur);  // 闃村奖
+                        g.DrawLine(pen, prev.Value, cur);         // 涓荤嚎
+                    }
+
+                    // 缁樺埗鏁版嵁鐐?
+                    g.FillEllipse(new SolidBrush(waterColor), x - 3, y - 3, 6, 6);
+
+                    prev = cur;
+                }
+            }
+        }
+
+        private void DrawLegend(Graphics g, int x, int y)
+        {
+            using (var font = new Font("寰蒋闆呴粦", 9F))
+            {
+                // 娓╁害鍥句緥
+                g.DrawLine(new Pen(dangerColor, 3), x, y + 5, x + 30, y + 5);
+                g.FillEllipse(new SolidBrush(dangerColor), x + 12, y + 2, 6, 6);
+                g.DrawString("娓╁害", font, new SolidBrush(dangerColor), x + 35, y);
+
+                // 婀垮害鍥句緥
+                g.DrawLine(new Pen(primaryColor, 3), x, y + 25, x + 30, y + 25);
+                g.FillEllipse(new SolidBrush(primaryColor), x + 12, y + 22, 6, 6);
+                g.DrawString("婀垮害", font, new SolidBrush(primaryColor), x + 35, y + 20);
+
+                // 姘翠綅鍥句緥
+                Color waterColor = Color.FromArgb(255, 193, 7);
+                g.DrawLine(new Pen(waterColor, 3), x, y + 45, x + 30, y + 45);
+                g.FillEllipse(new SolidBrush(waterColor), x + 12, y + 42, 6, 6);
+                g.DrawString("姘翠綅", font, new SolidBrush(waterColor), x + 35, y + 40);
+            }
+        }
+
+        private void Form1_FormClosing(object sender, FormClosingEventArgs e)
+        {
+            try
+            {
+                // 鏂紑涓插彛
+                if (_serialPort != null && _serialPort.IsOpen)
+                {
+                    _serialPort.DataReceived -= SerialPort_DataReceived;
+                    _serialPort.Close();
+                    _serialPort.Dispose();
+                }
+
+                // 鏂紑MQTT
+                if (_mqttClient != null && _mqttClient.IsConnected)
+                {
+                    _mqttClient.DisconnectAsync().Wait(1000);
+                }
+
+                // 鏂紑瑙嗛娴?
+                _videoCancellationToken?.Cancel();
+                _videoHttpClient?.Dispose();
+            }
+            catch { }
+        }
+
+        private void Form1_Resize(object sender, EventArgs e)
+        {
+            if (this.WindowState == FormWindowState.Minimized) return;
+
+            try
+            {
+                // 鑾峰彇褰撳墠绐椾綋鐨勫鎴峰尯澶у皬
+                int clientWidth = this.ClientSize.Width;
+                int clientHeight = this.ClientSize.Height;
+
+                // 璋冩暣鍥捐〃闈㈡澘鐨勫ぇ灏忓拰浣嶇疆
+                if (chartPanel != null)
+                {
+                    // 淇濇寔鍥捐〃瀹藉害鍜岄珮搴﹀浐瀹?
+                    // chartPanel.Width = 440;
+                    // chartPanel.Height = 195;
+                }
+
+                // 璋冩暣鏃ュ織鏂囨湰妗嗙殑浣嶇疆鍜屽ぇ灏?
+                if (logTextBox != null)
+                {
+                    logTextBox.Location = new Point(clientWidth - 410, 155);
+                    logTextBox.Width = 370;
+                    logTextBox.Height = clientHeight - 165;
+                }
+
+                // 璋冩暣鏃ュ織鏍囩浣嶇疆
+                if (logLabel != null)
+                {
+                    logLabel.Location = new Point(clientWidth - 410, 130);
+                }
+
+                // 璋冩暣鑷姩婊氬姩澶嶉€夋浣嶇疆
+                if (autoScrollCheckBox != null)
+                {
+                    autoScrollCheckBox.Location = new Point(clientWidth - 110, 130);
+                }
+
+                // 閲嶇粯鍥捐〃
+                if (chartPanel != null)
+                {
+                    chartPanel.Invalidate();
+                }
+            }
+            catch { }
+        }
+
+        #region MQTT鐩稿叧鏂规硶
+
+        // 鍒濆鍖朚QTT瀹㈡埛绔?
+        private void InitializeMqttClient()
+        {
+            try
+            {
+                var factory = new MqttFactory();
+                _mqttClient = factory.CreateMqttClient();
+                LogMessage("MQTT瀹㈡埛绔凡鍒濆鍖?);
+            }
+            catch (Exception ex)
+            {
+                LogMessage($"MQTT瀹㈡埛绔垵濮嬪寲澶辫触: {ex.Message}", Color.Red);
+            }
+        }
+
+        // MQTT杩炴帴鎸夐挳鐐瑰嚮浜嬩欢
+        private async void MqttConnectButton_Click(object sender, EventArgs e)
+        {
+            try
+            {
+                if (string.IsNullOrWhiteSpace(mqttBrokerTextBox.Text))
+                {
+                    MessageBox.Show("璇疯緭鍏QTT鏈嶅姟鍣ㄥ湴鍧€!", "鎻愮ず", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                    return;
+                }
+
+                if (string.IsNullOrWhiteSpace(mqttTopicTextBox.Text))
+                {
+                    MessageBox.Show("璇疯緭鍏QTT鍙戝竷涓婚!", "鎻愮ず", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                    return;
+                }
+
+                // 瑙ｆ瀽鏈嶅姟鍣ㄥ湴鍧€鍜岀鍙?
+                string[] parts = mqttBrokerTextBox.Text.Split(':');
+                string server = parts[0];
+                int port = parts.Length > 1 ? int.Parse(parts[1]) : 1883;
+
+                // 璇诲彇鍙戝竷涓婚鍜岃闃呬富棰?
+                _mqttPublishTopic = mqttTopicTextBox.Text.Trim();
+                _mqttSubscribeTopic = mqttSubscribeTopicTextBox.Text.Trim();
+
+                UpdateMqttStatus("杩炴帴涓?..", Color.Orange);
+                LogMessage($"姝ｅ湪杩炴帴MQTT鏈嶅姟鍣? {mqttBrokerTextBox.Text}");
+
+                // 鍒涘缓杩炴帴閫夐」
+                var options = new MqttClientOptionsBuilder()
+                    .WithTcpServer(server, port)
+                    .WithClientId("DHT11_Client_" + Guid.NewGuid().ToString())
+                    .WithCleanSession()
+                    .Build();
+
+                // 杩炴帴鍒癕QTT鏈嶅姟鍣?
+                var result = await _mqttClient.ConnectAsync(options);
+
+                if (result.ResultCode == MqttClientConnectResultCode.Success)
+                {
+                    UpdateMqttStatus("宸茶繛鎺?, Color.Green);
+                    mqttConnectButton.Enabled = false;
+                    mqttDisconnectButton.Enabled = true;
+                    mqttBrokerTextBox.Enabled = false;
+                    mqttTopicTextBox.Enabled = false;
+                    mqttSubscribeTopicTextBox.Enabled = false;
+
+                    LogMessage($"MQTT杩炴帴鎴愬姛: {mqttBrokerTextBox.Text}", Color.Green);
+                    LogMessage($"鍙戝竷涓婚: {_mqttPublishTopic}");
+
+                    // 璁㈤槄涓婚
+                    if (!string.IsNullOrWhiteSpace(_mqttSubscribeTopic))
+                    {
+                        await SubscribeToTopic(_mqttSubscribeTopic);
+                    }
+                }
+                else
+                {
+                    UpdateMqttStatus("杩炴帴澶辫触", Color.Red);
+                    LogMessage($"MQTT杩炴帴澶辫触: {result.ResultCode}", Color.Red);
+                    MessageBox.Show($"MQTT杩炴帴澶辫触: {result.ResultCode}", "閿欒", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                }
+            }
+            catch (Exception ex)
+            {
+                UpdateMqttStatus("杩炴帴澶辫触", Color.Red);
+                LogMessage($"MQTT杩炴帴寮傚父: {ex.Message}", Color.Red);
+                MessageBox.Show($"杩炴帴MQTT鏈嶅姟鍣ㄥけ璐? {ex.Message}", "閿欒", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+        }
+
+        // MQTT鏂紑鎸夐挳鐐瑰嚮浜嬩欢
+        private async void MqttDisconnectButton_Click(object sender, EventArgs e)
+        {
+            try
+            {
+                if (_mqttClient != null && _mqttClient.IsConnected)
+                {
+                    await _mqttClient.DisconnectAsync();
+                    UpdateMqttStatus("鏈繛鎺?, Color.Gray);
+                    mqttConnectButton.Enabled = true;
+                    mqttDisconnectButton.Enabled = false;
+                    mqttBrokerTextBox.Enabled = true;
+                    mqttTopicTextBox.Enabled = true;
+                    mqttSubscribeTopicTextBox.Enabled = true;
+
+                    LogMessage("MQTT宸叉柇寮€杩炴帴");
+                }
+            }
+            catch (Exception ex)
+            {
+                LogMessage($"MQTT鏂紑杩炴帴澶辫触: {ex.Message}", Color.Red);
+                MessageBox.Show($"鏂紑MQTT杩炴帴澶辫触: {ex.Message}", "閿欒", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+        }
+
+        // 鑷姩鍙戝竷澶嶉€夋鐘舵€佹敼鍙樹簨浠?
+        private void MqttAutoPublishCheckBox_CheckedChanged(object sender, EventArgs e)
+        {
+            _mqttAutoPublish = mqttAutoPublishCheckBox.Checked;
+            LogMessage($"鑷姩鍙戝竷MQTT鏁版嵁: {(_mqttAutoPublish ? "宸插紑鍚? : "宸插叧闂?)}");
+        }
+
+        // 鍙戝竷娓╂箍搴︽暟鎹埌MQTT
+        private async void PublishDataToMqtt(double temperature, double humidity)
+        {
+            try
+            {
+                if (_mqttClient == null || !_mqttClient.IsConnected)
+                {
+                    return; // 濡傛灉鏈繛鎺ワ紝涓嶅彂閫?
+                }
+
+                if (!_mqttAutoPublish)
+                {
+                    return; // 濡傛灉鏈紑鍚嚜鍔ㄥ彂甯冿紝涓嶅彂閫?
+                }
+
+                // 鑾峰彇鎶ヨ鐘舵€?
+                string alarmType = GetAlarmType(temperature, humidity);
+                bool hasAlarm = (alarmType != "姝ｅ父") || (_waterLevel > 50) || (_airQuality == "bad");
+
+                // 鏋勫缓JSON鏍煎紡鐨勬暟鎹?
+                string jsonData = $@"{{
+    ""timestamp"": ""{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff}"",
+    ""temperature"": {temperature},
+    ""humidity"": {humidity},
+    ""waterLevel"": {_waterLevel},
+    ""airQuality"": ""{_airQuality}"",
+    ""servoStatus"": ""{_servoStatus}"",
+    ""motorStatus"": ""{_motorStatus}"",
+    ""alarmType"": ""{alarmType}"",
+    ""hasAlarm"": {hasAlarm.ToString().ToLower()}
+}}";
+
+                var message = new MqttApplicationMessageBuilder()
+                    .WithTopic(_mqttPublishTopic)
+                    .WithPayload(jsonData)
+                    .WithQualityOfServiceLevel(MQTTnet.Protocol.MqttQualityOfServiceLevel.AtLeastOnce)
+                    .WithRetainFlag(false)
+                    .Build();
+
+                await _mqttClient.PublishAsync(message);
+                LogMessage($"[MQTT鍙戦€乚 娓╁害:{temperature}掳C 婀垮害:{humidity}% 姘翠綅:{_waterLevel}% 绌烘皵:{_airQuality} 鎶ヨ:{alarmType}", Color.Blue);
+            }
+            catch (Exception ex)
+            {
+                LogMessage($"MQTT鍙戝竷鏁版嵁澶辫触: {ex.Message}", Color.Red);
+            }
+        }
+
+        // 鏇存柊MQTT杩炴帴鐘舵€佹爣绛?
+        private void UpdateMqttStatus(string status, Color color)
+        {
+            if (mqttStatusLabel.InvokeRequired)
+            {
+                mqttStatusLabel.Invoke(new Action(() => UpdateMqttStatus(status, color)));
+                return;
+            }
+
+            mqttStatusLabel.Text = "鈼?" + status;
+            mqttStatusLabel.ForeColor = color;
+        }
+
+        // 璁㈤槄MQTT涓婚
+        private async Task SubscribeToTopic(string topic)
+        {
+            try
+            {
+                var subscribeOptions = new MqttClientSubscribeOptionsBuilder()
+                    .WithTopicFilter(topic)
+                    .Build();
+
+                await _mqttClient.SubscribeAsync(subscribeOptions);
+                LogMessage($"宸茶闃呬富棰? {topic}", Color.Green);
+
+                // 璁剧疆娑堟伅鎺ユ敹澶勭悊鍣?
+                _mqttClient.ApplicationMessageReceivedAsync += OnMqttMessageReceived;
+            }
+            catch (Exception ex)
+            {
+                LogMessage($"璁㈤槄涓婚澶辫触: {ex.Message}", Color.Red);
+            }
+        }
+
+        // MQTT娑堟伅鎺ユ敹澶勭悊
+        private Task OnMqttMessageReceived(MqttApplicationMessageReceivedEventArgs e)
+        {
+            try
+            {
+                string topic = e.ApplicationMessage.Topic;
+                string payload = Encoding.UTF8.GetString(e.ApplicationMessage.PayloadSegment.Array,
+                    e.ApplicationMessage.PayloadSegment.Offset,
+                    e.ApplicationMessage.PayloadSegment.Count);
+
+                // 鍦║I绾跨▼涓鐞?
+                this.Invoke((MethodInvoker)delegate
+                {
+                    LogMessage($"[MQTT鎺ユ敹] 涓婚:{topic} 娑堟伅:{payload}", Color.Purple);
+
+                    // 灏哅QTT娑堟伅閫氳繃涓插彛鍙戦€佸埌鍗曠墖鏈?
+                    if (_serialPort != null && _serialPort.IsOpen)
+                    {
+                        _serialPort.WriteLine(payload);
+                        LogMessage($"[杞彂鍒颁覆鍙 {payload}", Color.Blue);
+                    }
+                    else
+                    {
+                        LogMessage("涓插彛鏈繛鎺ワ紝鏃犳硶杞彂娑堟伅", Color.Orange);
+                    }
+                });
+            }
+            catch (Exception ex)
+            {
+                LogMessage($"澶勭悊MQTT娑堟伅澶辫触: {ex.Message}", Color.Red);
+            }
+
+            return Task.CompletedTask;
+        }
+
+        #endregion
+
+        #region 璁惧鎺у埗鏂规硶
+
+        // 鍙戦€佷覆鍙ｅ懡浠?
+        private void SendSerialCommand(string command)
+        {
+            try
+            {
+                if (_serialPort != null && _serialPort.IsOpen)
+                {
+                    _serialPort.WriteLine(command);
+                    LogMessage($"鍙戦€佸懡浠? {command}", Color.Blue);
+                }
+                else
+                {
+                    MessageBox.Show("涓插彛鏈繛鎺?", "閿欒", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                }
+            }
+            catch (Exception ex)
+            {
+                LogMessage($"鍙戦€佸懡浠ゅけ璐? {ex.Message}", Color.Red);
+                MessageBox.Show($"鍙戦€佸懡浠ゅけ璐? {ex.Message}", "閿欒", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+        }
+
+        // 鑷姩妯″紡鎸夐挳
+        private void ModeAutoButton_Click(object sender, EventArgs e)
+        {
+            SendSerialCommand("mode-0");
+            modeStatusLabel.Text = "鈼?鑷姩妯″紡";
+            modeStatusLabel.ForeColor = successColor;
+            servoOnButton.Enabled = false;
+            servoOffButton.Enabled = false;
+            motorOnButton.Enabled = false;
+            motorOffButton.Enabled = false;
+        }
+
+        // 鎵嬪姩妯″紡鎸夐挳
+        private void ModeManualButton_Click(object sender, EventArgs e)
+        {
+            SendSerialCommand("mode-1");
+            modeStatusLabel.Text = "鈼?鎵嬪姩妯″紡";
+            modeStatusLabel.ForeColor = warningColor;
+            servoOnButton.Enabled = true;
+            servoOffButton.Enabled = true;
+            motorOnButton.Enabled = true;
+            motorOffButton.Enabled = true;
+        }
+
+        // 鑸垫満鍏虫寜閽?
+        private void ServoOffButton_Click(object sender, EventArgs e)
+        {
+            SendSerialCommand("DUOJ-0");
+        }
+
+        // 鑸垫満寮€鎸夐挳
+        private void ServoOnButton_Click(object sender, EventArgs e)
+        {
+            SendSerialCommand("DUOJ-1");
+        }
+
+        // 鐢垫満鍏虫寜閽?
+        private void MotorOffButton_Click(object sender, EventArgs e)
+        {
+            SendSerialCommand("MOTOR-0");
+        }
+
+        // 鐢垫満寮€鎸夐挳
+        private void MotorOnButton_Click(object sender, EventArgs e)
+        {
+            SendSerialCommand("MOTOR-1");
+        }
+
+        #endregion
+
+        #region 瑙嗛鐩戞帶鏂规硶
+
+        // 杩炴帴瑙嗛娴佹寜閽?
+        private async void VideoConnectButton_Click(object sender, EventArgs e)
+        {
+            try
+            {
+                if (string.IsNullOrWhiteSpace(videoIpTextBox.Text))
+                {
+                    MessageBox.Show("璇疯緭鍏SP32鎽勫儚澶村湴鍧€!", "鎻愮ず", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                    return;
+                }
+
+                string baseUrl = videoIpTextBox.Text.Trim();
+                if (!baseUrl.StartsWith("http://") && !baseUrl.StartsWith("https://"))
+                {
+                    baseUrl = "http://" + baseUrl;
+                }
+
+                // ESP32-CAM鐨凪JPEG娴佸湴鍧€閫氬父鏄?/stream 鎴?/:81/stream
+                string streamUrl = baseUrl.TrimEnd('/') + "/stream";
+
+                UpdateVideoStatus("杩炴帴涓?..", Color.Orange);
+                LogMessage($"姝ｅ湪杩炴帴瑙嗛娴? {streamUrl}");
+
+                _videoHttpClient = new HttpClient();
+                _videoHttpClient.Timeout = TimeSpan.FromSeconds(10);
+                _videoCancellationToken = new CancellationTokenSource();
+
+                videoConnectButton.Enabled = false;
+                videoDisconnectButton.Enabled = true;
+                videoIpTextBox.Enabled = false;
+
+                // 鍚姩瑙嗛娴佹帴鏀朵换鍔?
+                _ = Task.Run(() => ReceiveVideoStream(streamUrl, _videoCancellationToken.Token));
+            }
+            catch (Exception ex)
+            {
+                UpdateVideoStatus("杩炴帴澶辫触", Color.Red);
+                LogMessage($"瑙嗛娴佽繛鎺ュけ璐? {ex.Message}", Color.Red);
+                MessageBox.Show($"杩炴帴瑙嗛娴佸け璐? {ex.Message}", "閿欒", MessageBoxButtons.OK, MessageBoxIcon.Error);
+
+                videoConnectButton.Enabled = true;
+                videoDisconnectButton.Enabled = false;
+                videoIpTextBox.Enabled = true;
+            }
+        }
+
+        // 鏂紑瑙嗛娴佹寜閽?
+        private void VideoDisconnectButton_Click(object sender, EventArgs e)
+        {
+            try
+            {
+                _videoCancellationToken?.Cancel();
+                _videoHttpClient?.Dispose();
+                _videoStreaming = false;
+
+                UpdateVideoStatus("鏈繛鎺?, Color.Gray);
+                videoConnectButton.Enabled = true;
+                videoDisconnectButton.Enabled = false;
+                videoIpTextBox.Enabled = true;
+
+                if (videoPictureBox.InvokeRequired)
+                {
+                    videoPictureBox.Invoke(new Action(() => videoPictureBox.Image = null));
+                }
+                else
+                {
+                    videoPictureBox.Image = null;
+                }
+
+                LogMessage("瑙嗛娴佸凡鏂紑");
+            }
+            catch (Exception ex)
+            {
+                LogMessage($"鏂紑瑙嗛娴佸け璐? {ex.Message}", Color.Red);
+            }
+        }
+
+        // 鎺ユ敹MJPEG瑙嗛娴?
+        private async Task ReceiveVideoStream(string streamUrl, CancellationToken cancellationToken)
+        {
+            try
+            {
+                _videoStreaming = true;
+                using (var response = await _videoHttpClient.GetAsync(streamUrl, HttpCompletionOption.ResponseHeadersRead, cancellationToken))
+                {
+                    response.EnsureSuccessStatusCode();
+
+                    // 杩炴帴鎴愬姛锛屾洿鏂扮姸鎬?
+                    this.Invoke(new Action(() =>
+                    {
+                        UpdateVideoStatus("宸茶繛鎺?, Color.Green);
+                        LogMessage("瑙嗛娴佽繛鎺ユ垚鍔?, Color.Green);
+                    }));
+
+                    using (var stream = await response.Content.ReadAsStreamAsync())
+                    {
+                        byte[] buffer = new byte[1024 * 1024]; // 1MB buffer
+                        List<byte> frameBuffer = new List<byte>();
+                        int bytesRead;
+
+                        while (!cancellationToken.IsCancellationRequested && (bytesRead = await stream.ReadAsync(buffer, 0, buffer.Length, cancellationToken)) > 0)
+                        {
+                            for (int i = 0; i < bytesRead; i++)
+                            {
+                                frameBuffer.Add(buffer[i]);
+
+                                // 妫€娴婮PEG缁撴潫鏍囪 (0xFF 0xD9)
+                                if (frameBuffer.Count >= 2 && frameBuffer[frameBuffer.Count - 2] == 0xFF && frameBuffer[frameBuffer.Count - 1] == 0xD9)
+                                {
+                                    // 鎵惧埌JPEG璧峰鏍囪 (0xFF 0xD8)
+                                    int startIndex = -1;
+                                    for (int j = 0; j < frameBuffer.Count - 1; j++)
+                                    {
+                                        if (frameBuffer[j] == 0xFF && frameBuffer[j + 1] == 0xD8)
+                                        {
+                                            startIndex = j;
+                                            break;
+                                        }
+                                    }
+
+                                    if (startIndex >= 0)
+                                    {
+                                        byte[] frameData = frameBuffer.Skip(startIndex).ToArray();
+                                        DisplayFrame(frameData);
+                                        frameBuffer.Clear();
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            catch (OperationCanceledException)
+            {
+                LogMessage("瑙嗛娴佹帴鏀跺凡鍙栨秷");
+            }
+            catch (HttpRequestException ex)
+            {
+                if (_videoStreaming)
+                {
+                    string errorMsg = ex.Message;
+                    string suggestion = "";
+
+                    if (ex.Message.Contains("404"))
+                    {
+                        suggestion = "\n\n寤鸿灏濊瘯浠ヤ笅鍦板潃鏍煎紡锛歕n" +
+                                   "1. http://IP鍦板潃:81/stream\n" +
+                                   "2. http://IP鍦板潃\n" +
+                                   "3. http://IP鍦板潃/cam-hi.jpg\n" +
+                                   "4. http://IP鍦板潃:81";
+                    }
+
+                    LogMessage($"瑙嗛娴佹帴鏀堕敊璇? {errorMsg}", Color.Red);
+                    this.Invoke(new Action(() =>
+                    {
+                        UpdateVideoStatus("杩炴帴澶辫触", Color.Red);
+                        videoConnectButton.Enabled = true;
+                        videoDisconnectButton.Enabled = false;
+                        videoIpTextBox.Enabled = true;
+                        MessageBox.Show($"瑙嗛娴佽繛鎺ュけ璐? {errorMsg}{suggestion}", "杩炴帴閿欒", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                    }));
+                }
+            }
+            catch (Exception ex)
+            {
+                if (_videoStreaming)
+                {
+                    LogMessage($"瑙嗛娴佹帴鏀堕敊璇? {ex.Message}", Color.Red);
+                    this.Invoke(new Action(() =>
+                    {
+                        UpdateVideoStatus("杩炴帴鏂紑", Color.Red);
+                        videoConnectButton.Enabled = true;
+                        videoDisconnectButton.Enabled = false;
+                        videoIpTextBox.Enabled = true;
+                    }));
+                }
+            }
+            finally
+            {
+                _videoStreaming = false;
+            }
+        }
+
+        // 鏄剧ず瑙嗛甯?
+        private void DisplayFrame(byte[] frameData)
+        {
+            try
+            {
+                using (var ms = new MemoryStream(frameData))
+                {
+                    var image = Image.FromStream(ms);
+
+                    if (videoPictureBox.InvokeRequired)
+                    {
+                        videoPictureBox.Invoke(new Action(() =>
+                        {
+                            var oldImage = videoPictureBox.Image;
+                            videoPictureBox.Image = image;
+                            oldImage?.Dispose();
+                        }));
+                    }
+                    else
+                    {
+                        var oldImage = videoPictureBox.Image;
+                        videoPictureBox.Image = image;
+                        oldImage?.Dispose();
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"鏄剧ず甯ч敊璇? {ex.Message}");
+            }
+        }
+
+        // 鏇存柊瑙嗛杩炴帴鐘舵€佹爣绛?
+        private void UpdateVideoStatus(string status, Color color)
+        {
+            if (videoStatusLabel.InvokeRequired)
+            {
+                videoStatusLabel.Invoke(new Action(() => UpdateVideoStatus(status, color)));
+                return;
+            }
+
+            videoStatusLabel.Text = "鈼?" + status;
+            videoStatusLabel.ForeColor = color;
+        }
+
+        #endregion
+    }
+}
+
+
+
+// ===== FILE: Form1.Designer.cs =====
+namespace DHT11
+{
+    partial class Form1
+    {
+        /// <summary>
+        /// 蹇呴渶鐨勮璁″櫒鍙橀噺銆?
+        /// </summary>
+        private System.ComponentModel.IContainer components = null;
+
+        /// <summary>
+        /// 娓呯悊鎵€鏈夋鍦ㄤ娇鐢ㄧ殑璧勬簮銆?
+        /// </summary>
+        /// <param name="disposing">濡傛灉搴旈噴鏀炬墭绠¤祫婧?涓?true;鍚﹀垯涓?false銆?/param>
+        protected override void Dispose(bool disposing)
+        {
+            if (disposing && (components != null))
+            {
+                components.Dispose();
+            }
+            base.Dispose(disposing);
+        }
+
+        #region Windows 绐椾綋璁捐鍣ㄧ敓鎴愮殑浠ｇ爜
+
+        /// <summary>
+        /// 璁捐鍣ㄦ敮鎸佹墍闇€鐨勬柟娉?- 涓嶈淇敼
+        /// 浣跨敤浠ｇ爜缂栬緫鍣ㄤ慨鏀规鏂规硶鐨勫唴瀹广€?
+        /// </summary>
+        private void InitializeComponent()
+        {
+            this.SuspendLayout();
+            //
+            // Form1
+            //
+            this.AutoScaleDimensions = new System.Drawing.SizeF(6F, 13F);
+            this.AutoScaleMode = System.Windows.Forms.AutoScaleMode.Font;
+            this.ClientSize = new System.Drawing.Size(1200, 700);
+            this.Name = "Form1";
+            this.Text = "DHT11娓╂箍搴︾洃鎺х郴缁?;
+            this.ResumeLayout(false);
+        }
+
+        #endregion
+    }
+}
+
+
+
+// ===== FILE: packages.config =====
+<?xml version="1.0" encoding="utf-8"?>
+<packages>
+  <package id="MQTTnet" version="4.3.7.1207" targetFramework="net472" />
+</packages>
+
+
+
+// ===== FILE: Program.cs =====
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Threading.Tasks;
+using System.Windows.Forms;
+
+namespace DHT11
+{
+    internal static class Program
+    {
+        /// <summary>
+        /// 应用程序的主入口点。
+        /// </summary>
+        [STAThread]
+        static void Main()
+        {
+            Application.EnableVisualStyles();
+            Application.SetCompatibleTextRenderingDefault(false);
+            Application.Run(new Form1());
+        }
+    }
+}
+
+
+
+// ===== FILE: Properties/AssemblyInfo.cs =====
+using System.Reflection;
+using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
+
+// 有关程序集的一般信息由以下
+// 控制。更改这些特性值可修改
+// 与程序集关联的信息。
+[assembly: AssemblyTitle("DHT11")]
+[assembly: AssemblyDescription("")]
+[assembly: AssemblyConfiguration("")]
+[assembly: AssemblyCompany("")]
+[assembly: AssemblyProduct("DHT11")]
+[assembly: AssemblyCopyright("Copyright ©  2025")]
+[assembly: AssemblyTrademark("")]
+[assembly: AssemblyCulture("")]
+
+// 将 ComVisible 设置为 false 会使此程序集中的类型
+//对 COM 组件不可见。如果需要从 COM 访问此程序集中的类型
+//请将此类型的 ComVisible 特性设置为 true。
+[assembly: ComVisible(false)]
+
+// 如果此项目向 COM 公开，则下列 GUID 用于类型库的 ID
+[assembly: Guid("7e9c311b-5349-4dad-b948-2588a3afc127")]
+
+// 程序集的版本信息由下列四个值组成: 
+//
+//      主版本
+//      次版本
+//      生成号
+//      修订号
+//
+[assembly: AssemblyVersion("1.0.0.0")]
+[assembly: AssemblyFileVersion("1.0.0.0")]
+
+
+
+// ===== FILE: Properties/Resources.Designer.cs =====
+//------------------------------------------------------------------------------
+// <auto-generated>
+//     此代码由工具生成。
+//     运行时版本: 4.0.30319.42000
+//
+//     对此文件的更改可能导致不正确的行为，如果
+//     重新生成代码，则所做更改将丢失。
+// </auto-generated>
+//------------------------------------------------------------------------------
+
+namespace DHT11.Properties
+{
+
+
+    /// <summary>
+    ///   强类型资源类，用于查找本地化字符串等。
+    /// </summary>
+    // 此类是由 StronglyTypedResourceBuilder
+    // 类通过类似于 ResGen 或 Visual Studio 的工具自动生成的。
+    // 若要添加或移除成员，请编辑 .ResX 文件，然后重新运行 ResGen
+    // (以 /str 作为命令选项)，或重新生成 VS 项目。
+    [global::System.CodeDom.Compiler.GeneratedCodeAttribute("System.Resources.Tools.StronglyTypedResourceBuilder", "4.0.0.0")]
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute()]
+    [global::System.Runtime.CompilerServices.CompilerGeneratedAttribute()]
+    internal class Resources
+    {
+
+        private static global::System.Resources.ResourceManager resourceMan;
+
+        private static global::System.Globalization.CultureInfo resourceCulture;
+
+        [global::System.Diagnostics.CodeAnalysis.SuppressMessageAttribute("Microsoft.Performance", "CA1811:AvoidUncalledPrivateCode")]
+        internal Resources()
+        {
+        }
+
+        /// <summary>
+        ///   返回此类使用的缓存 ResourceManager 实例。
+        /// </summary>
+        [global::System.ComponentModel.EditorBrowsableAttribute(global::System.ComponentModel.EditorBrowsableState.Advanced)]
+        internal static global::System.Resources.ResourceManager ResourceManager
+        {
+            get
+            {
+                if ((resourceMan == null))
+                {
+                    global::System.Resources.ResourceManager temp = new global::System.Resources.ResourceManager("DHT11.Properties.Resources", typeof(Resources).Assembly);
+                    resourceMan = temp;
+                }
+                return resourceMan;
+            }
+        }
+
+        /// <summary>
+        ///   重写当前线程的 CurrentUICulture 属性，对
+        ///   使用此强类型资源类的所有资源查找执行重写。
+        /// </summary>
+        [global::System.ComponentModel.EditorBrowsableAttribute(global::System.ComponentModel.EditorBrowsableState.Advanced)]
+        internal static global::System.Globalization.CultureInfo Culture
+        {
+            get
+            {
+                return resourceCulture;
+            }
+            set
+            {
+                resourceCulture = value;
+            }
+        }
+    }
+}
+
+
+
+// ===== FILE: Properties/Settings.Designer.cs =====
+//------------------------------------------------------------------------------
+// <auto-generated>
+//     This code was generated by a tool.
+//     Runtime Version:4.0.30319.42000
+//
+//     Changes to this file may cause incorrect behavior and will be lost if
+//     the code is regenerated.
+// </auto-generated>
+//------------------------------------------------------------------------------
+
+namespace DHT11.Properties
+{
+
+
+    [global::System.Runtime.CompilerServices.CompilerGeneratedAttribute()]
+    [global::System.CodeDom.Compiler.GeneratedCodeAttribute("Microsoft.VisualStudio.Editors.SettingsDesigner.SettingsSingleFileGenerator", "11.0.0.0")]
+    internal sealed partial class Settings : global::System.Configuration.ApplicationSettingsBase
+    {
+
+        private static Settings defaultInstance = ((Settings)(global::System.Configuration.ApplicationSettingsBase.Synchronized(new Settings())));
+
+        public static Settings Default
+        {
+            get
+            {
+                return defaultInstance;
+            }
+        }
+    }
+}
+
+
+

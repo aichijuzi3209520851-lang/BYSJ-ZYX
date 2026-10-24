@@ -1,0 +1,15 @@
+# 忽略 Visual Studio 自动生成的隐藏配置文件夹
+.vs/
+
+# 忽略编译输出文件夹（每个工程下面都有，包含生成的 .exe 文件）
+[Bb]in/
+[Oo]bj/
+
+# 忽略用户特定的项目设置
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+
+# 忽略测试结果
+TestResults/

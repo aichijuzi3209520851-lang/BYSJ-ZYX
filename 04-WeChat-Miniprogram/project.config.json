@@ -1,0 +1,47 @@
+{
+  "description": "项目配置文件",
+  "setting": {
+    "es6": false,
+    "postcss": true,
+    "minified": true,
+    "uglifyFileName": false,
+    "enhance": false,
+    "packNpmRelationList": [],
+    "packNpmManually": false,
+    "babelSetting": {
+      "ignore": [],
+      "disablePlugins": [],
+      "outputPath": ""
+    },
+    "useCompilerPlugins": false,
+    "minifyWXML": true,
+    "compileWorklet": false,
+    "uploadWithSourceMap": true,
+    "minifyWXSS": true,
+    "localPlugins": false,
+    "disableUseStrict": false,
+    "condition": false,
+    "swc": false,
+    "disableSWC": true,
+    "ignoreDevUnusedFiles": false,
+    "ignoreUploadUnusedFiles": false
+  },
+  "compileType": "miniprogram",
+  "simulatorPluginLibVersion": {},
+  "packOptions": {
+    "ignore": [],
+    "include": []
+  },
+  "appid": "wx5afc00ee98752396",
+  "projectname": "miniprogram-10",
+  "editorSetting": {
+    "tabIndent": "insertSpaces",
+    "tabSize": 2
+  },
+  "libVersion": "3.12.1",
+  "condition": {
+    "miniprogram": {
+      "list": []
+    }
+  }
+}

@@ -1,0 +1,141 @@
+<!-- 传感器数据页 -->
+<view class="container">
+
+  <!-- 连接状态栏 -->
+  <view class="conn-bar card {{mqttConnected ? 'conn-bar--on' : ''}}">
+    <view class="conn-info">
+      <view class="pulse-dot {{mqttConnected ? '' : 'conn-dot--off'}}"></view>
+      <view class="conn-text">
+        <text class="conn-title">{{mqttConnected ? '已连接 EMQX' : (connecting ? '连接中…' : '未连接服务器')}}</text>
+        <text class="conn-sub t-caption">{{mqttConnected ? mqttTopic : '点击右侧配置填入服务器与主题'}}</text>
+      </view>
+    </view>
+    <button class="conn-btn {{mqttConnected ? 'conn-btn--ghost' : ''}}" size="mini"
+      bindtap="{{mqttConnected ? 'disconnectMqtt' : 'showMqttConfig'}}">
+      {{mqttConnected ? '断开' : '配置'}}
+    </button>
+  </view>
+
+  <!-- 报警横幅(数据以固件上报的 hasAlarm 为准) -->
+  <view class="alarm-banner card" wx:if="{{mqttConnected && sensorData.warning}}">
+    <image class="alarm-icon" src="/ICON/蜂鸣器-开状态.png" mode="aspectFit" />
+    <view class="alarm-text">
+      <text class="alarm-title">温室环境报警</text>
+      <text class="alarm-detail t-caption">{{sensorData.alarmType || '环境参数超出统一阈值'}}</text>
+    </view>
+  </view>
+
+  <!-- 数据卡片网格 -->
+  <view class="grid">
+    <!-- 温度 -->
+    <view class="cell card {{sensorData.temperature > thresholds.temperature ? 'cell--alarm' : ''}}">
+      <image class="cell-icon"
+        src="{{sensorData.temperature > thresholds.temperature ? '/ICON/温度_报警状态.png' : '/ICON/温度.png'}}"
+        mode="aspectFit" />
+      <text class="cell-name">温度</text>
+      <text class="cell-value">{{sensorData.temperature == null ? '--' : sensorData.temperature}}<text class="cell-unit">°C</text></text>
+      <text class="cell-hint t-caption">阈值 >{{thresholds.temperature}}°C</text>
+    </view>
+
+    <!-- 湿度 -->
+    <view class="cell card {{sensorData.humidity > thresholds.humidity ? 'cell--alarm' : ''}}">
+      <image class="cell-icon"
+        src="{{sensorData.humidity > thresholds.humidity ? '/ICON/湿度_报警状态.png' : '/ICON/湿度.png'}}"
+        mode="aspectFit" />
+      <text class="cell-name">空气湿度</text>
+      <text class="cell-value">{{sensorData.humidity == null ? '--' : sensorData.humidity}}<text class="cell-unit">%RH</text></text>
+      <text class="cell-hint t-caption">阈值 >{{thresholds.humidity}}%</text>
+    </view>
+
+    <!-- 土壤湿度 -->
+    <view class="cell card {{sensorData.soilMoisture > thresholds.soilMoisture ? 'cell--alarm' : ''}}">
+      <image class="cell-icon"
+        src="{{sensorData.soilMoisture > thresholds.soilMoisture ? '/ICON/水位_报警状态.png' : '/ICON/水位.png'}}"
+        mode="aspectFit" />
+      <text class="cell-name">土壤湿度</text>
+      <text class="cell-value">{{sensorData.soilMoisture == null ? '--' : sensorData.soilMoisture}}<text class="cell-unit">%</text></text>
+      <text class="cell-hint t-caption">过湿阈值 >{{thresholds.soilMoisture}}%</text>
+    </view>
+
+    <!-- 空气质量 -->
+    <view class="cell card {{sensorData.airQuality === 'bad' ? 'cell--alarm' : ''}}">
+      <image class="cell-icon"
+        src="{{sensorData.airQuality === 'bad' ? '/ICON/空气质量劣状态.png' : '/ICON/空气质量优状态.png'}}"
+        mode="aspectFit" />
+      <text class="cell-name">空气质量</text>
+      <text class="cell-value cell-value--text">{{sensorData.airQuality === 'bad' ? '污染' : (sensorData.airQuality === 'nice' ? '良好' : '--')}}</text>
+      <text class="cell-hint t-caption">烟雾传感器判定</text>
+    </view>
+
+    <!-- 天窗(舵机) -->
+    <view class="cell card">
+      <image class="cell-icon" src="{{sensorData.servoStatus === 'ON' ? '/ICON/窗户-开状态.png' : '/ICON/窗户-关状态.png'}}" mode="aspectFit" />
+      <text class="cell-name">天窗</text>
+      <text class="cell-value cell-value--text">{{sensorData.servoStatus === 'ON' ? '开启' : (sensorData.servoStatus === 'OFF' ? '关闭' : '--')}}</text>
+      <text class="cell-hint t-caption">舵机 0°/180°</text>
+    </view>
+
+    <!-- 风扇(电机) -->
+    <view class="cell card">
+      <image class="cell-icon" src="{{sensorData.motorStatus === 'ON' ? '/ICON/风扇-开状态.png' : '/ICON/风扇-关状态.png'}}" mode="aspectFit" />
+      <text class="cell-name">风扇</text>
+      <text class="cell-value cell-value--text">{{sensorData.motorStatus === 'ON' ? '运行' : (sensorData.motorStatus === 'OFF' ? '停止' : '--')}}</text>
+      <text class="cell-hint t-caption">烟雾联动排风</text>
+    </view>
+  </view>
+
+  <!-- 更新时间 -->
+  <view class="update-row" wx:if="{{lastUpdateTime}}">
+    <text class="t-caption">最后更新 {{lastUpdateTime}} · 1.5s/次</text>
+  </view>
+
+  <!-- ==================== 配置弹窗 ==================== -->
+  <view class="modal-mask" wx:if="{{showConfig}}" catchtap="hideConfig">
+    <view class="modal card" catchtap="stopPropagation">
+      <view class="modal-head">
+        <text class="t-title">服务器配置</text>
+        <text class="modal-close" bindtap="hideConfig">×</text>
+      </view>
+
+      <view class="field">
+        <text class="field-label">服务器地址</text>
+        <input class="field-input" type="text" placeholder="例如 192.168.36.221"
+          placeholder-class="field-placeholder" value="{{mqttHost}}" bindinput="onHostInput" />
+      </view>
+
+      <view class="field">
+        <text class="field-label">WebSocket 端口</text>
+        <input class="field-input" type="number" placeholder="EMQX 默认 8083"
+          placeholder-class="field-placeholder" value="{{mqttPort}}" bindinput="onPortInput" />
+      </view>
+
+      <view class="field">
+        <text class="field-label">订阅主题</text>
+        <input class="field-input" type="text" placeholder="必填 · 与上位机发布主题一致(默认 green/data)"
+          placeholder-class="field-placeholder" value="{{mqttTopic}}" bindinput="onTopicInput" />
+      </view>
+
+      <!-- 连接历史: 连接过一次即可在下次直接选用 -->
+      <view class="history" wx:if="{{history.length > 0}}">
+        <view class="history-head">
+          <text class="field-label">连接历史</text>
+          <text class="t-caption">点击填入</text>
+        </view>
+        <view class="history-item" wx:for="{{history}}" wx:key="index"
+          data-item="{{item}}" bindtap="onHistoryTap">
+          <view class="history-info">
+            <text class="history-topic">{{item.topic}}</text>
+            <text class="t-caption">{{item.host}}:{{item.port}}</text>
+          </view>
+          <text class="history-del" catchtap="onHistoryRemove" data-index="{{index}}">移除</text>
+        </view>
+      </view>
+
+      <view class="modal-foot">
+        <button class="btn-ghost" bindtap="hideConfig">取消</button>
+        <button class="btn-primary" bindtap="saveConfigAndConnect">保存并连接</button>
+      </view>
+    </view>
+  </view>
+
+</view>

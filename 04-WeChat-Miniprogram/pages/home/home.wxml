@@ -1,0 +1,80 @@
+<!-- 首页 -->
+<view class="container">
+
+  <!-- 顶部品牌区: 深绿平铺, 白字层级 -->
+  <view class="hero">
+    <view class="hero-badge">
+      <view class="pulse-dot hero-dot"></view>
+      <text class="hero-badge-text">系统运行中</text>
+    </view>
+    <text class="hero-title">智能温室大棚监测</text>
+    <text class="hero-sub">Smart Greenhouse Monitoring</text>
+  </view>
+
+  <!-- 欢迎卡片 -->
+  <view class="card welcome">
+    <text class="welcome-text">
+      基于 STM32 与 MQTT 的温室环境监控系统，实时采集温湿度、土壤湿度与空气质量，报警联动天窗与风扇。
+    </text>
+  </view>
+
+  <!-- 功能列表: 纵向行式布局(替代千篇一律的三列卡片) -->
+  <view class="feature card">
+    <view class="feature-row">
+      <image class="feature-icon" src="/ICON/温度.png" mode="aspectFit" />
+      <view class="feature-body">
+        <text class="feature-title">实时监测</text>
+        <text class="feature-desc t-sub">温湿度 / 土壤湿度 / 空气质量采集，1.5 秒一帧</text>
+      </view>
+    </view>
+    <view class="feature-divider"></view>
+    <view class="feature-row">
+      <image class="feature-icon" src="/ICON/风扇-关状态.png" mode="aspectFit" />
+      <view class="feature-body">
+        <text class="feature-title">智能联动</text>
+        <text class="feature-desc t-sub">超标自动开窗通风、排风，多 LED 与蜂鸣器声光报警</text>
+      </view>
+    </view>
+    <view class="feature-divider"></view>
+    <view class="feature-row">
+      <image class="feature-icon" src="/ICON/蜂鸣器-关状态.png" mode="aspectFit" />
+      <view class="feature-body">
+        <text class="feature-title">远程查看</text>
+        <text class="feature-desc t-sub">EMQX 消息中间件分发，手机端随时掌握温室状态</text>
+      </view>
+    </view>
+  </view>
+
+  <!-- 系统信息 -->
+  <view class="card meta">
+    <view class="meta-item">
+      <text class="meta-label">系统版本</text>
+      <text class="meta-value">V1.1</text>
+    </view>
+    <view class="meta-divider"></view>
+    <view class="meta-item">
+      <text class="meta-label">传感器</text>
+      <text class="meta-value">3 类</text>
+    </view>
+    <view class="meta-divider"></view>
+    <view class="meta-item">
+      <text class="meta-label">报警阈值</text>
+      <text class="meta-value">三端统一</text>
+    </view>
+  </view>
+
+  <!-- 开发者信息 -->
+  <view class="card author">
+    <image class="author-avatar" src="/ICON/爱吃橘子.jpg" mode="aspectFill" />
+    <view class="author-body">
+      <text class="author-name">周颖暄</text>
+      <text class="t-caption">毕业设计 · 物联网方向</text>
+    </view>
+  </view>
+
+  <!-- 主操作: 全宽唯一 CTA -->
+  <button class="btn-primary cta" bindtap="goToSensor">
+    进入传感器监测
+  </button>
+
+</view>

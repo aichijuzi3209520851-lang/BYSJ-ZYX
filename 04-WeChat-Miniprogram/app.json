@@ -1,0 +1,37 @@
+{
+  "pages": [
+    "pages/home/home",
+    "pages/sensor/sensor"
+  ],
+  "window": {
+    "navigationBarTextStyle": "white",
+    "navigationBarTitleText": "智能温室大棚监测",
+    "navigationBarBackgroundColor": "#1E8E55",
+    "backgroundColor": "#F4F7F4",
+    "backgroundTextStyle": "light",
+    "enablePullDownRefresh": false
+  },
+  "tabBar": {
+    "color": "#6D7C74",
+    "selectedColor": "#1E8E55",
+    "backgroundColor": "#FFFFFF",
+    "borderStyle": "white",
+    "list": [
+      {
+        "pagePath": "pages/home/home",
+        "text": "首页",
+        "iconPath": "images/首页-未选择状态.png",
+        "selectedIconPath": "images/首页-选中状态.png"
+      },
+      {
+        "pagePath": "pages/sensor/sensor",
+        "text": "传感器",
+        "iconPath": "images/传感器-未选中状态.png",
+        "selectedIconPath": "images/传感器-选中状态.png"
+      }
+    ]
+  },
+  "style": "v2",
+  "sitemapLocation": "sitemap.json",
+  "lazyCodeLoading": "requiredComponents"
+}

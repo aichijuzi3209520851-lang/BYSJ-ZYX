@@ -1,0 +1,14 @@
+# 忽略 Keil 编译产生的文件夹
+Objects/
+Listings/
+DebugConfig/
+
+# 忽略 Keil 生成的个人环境配置和临时文件
+*.uvguix.*
+*.uvoptx
+*.bak
+*.dep
+*.Administrator
+
+# 忽略批处理文件（可选，看你想不想传 keilkill.bat）
+# keilkill.bat

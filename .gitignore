@@ -1,0 +1,22 @@
+# ===== 通用 =====
+.DS_Store
+Thumbs.db
+*.log
+
+# ===== Keil MDK (STM32 固件) =====
+Objects/
+Listings/
+*.uvguix.*
+*.bak
+JLinkLog.txt
+
+# ===== Visual Studio (上位机/EMQX启动器) =====
+.vs/
+bin/
+obj/
+packages/
+*.user
+*.suo
+
+# ===== 微信小程序 =====
+node_modules/

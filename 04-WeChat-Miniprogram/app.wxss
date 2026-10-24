@@ -1,0 +1,143 @@
+/**
+ * 智能温室大棚监测 · 全局设计规范
+ *
+ * 设计原则(stitch-design-taste):
+ *  - 单一强调色: 温室绿 #1E8E55, 禁止霓虹/紫蓝渐变
+ *  - 中性画布 #F4F7F4 承载内容, 卡片留白呼吸感, 1px 低对比描边
+ *  - 层级靠字重与颜色, 不靠超大字号; 数字用等宽数字特性
+ *  - 禁止 emoji 当图标: 一律使用 images/ICON 目录下的 PNG 素材
+ *  - 触控目标最小 88rpx(≈44px); 动效只用 transform/opacity
+ */
+
+/* ---------- 设计令牌 ---------- */
+page {
+  /* 画布与表面 */
+  --bg-canvas: #F4F7F4;        /* 页面画布: 带绿调的暖白 */
+  --bg-surface: #FFFFFF;       /* 卡片表面 */
+  --bg-wash: #E8F5EE;          /* 强调色浅底(标签/选中态) */
+
+  /* 墨色(禁止纯黑) */
+  --ink-primary: #182720;      /* 主文字: 绿调炭黑 */
+  --ink-secondary: #6D7C74;    /* 次级文字: 灰绿 */
+  --ink-tertiary: #9AA8A0;     /* 辅助/占位文字 */
+
+  /* 描边与分隔 */
+  --border-hair: rgba(24, 39, 32, 0.08);
+
+  /* 唯一强调色 */
+  --accent: #1E8E55;           /* 温室绿: CTA/激活/聚焦 */
+  --accent-pressed: #176E42;   /* 按压态加深 */
+
+  /* 语义警示色(仅用于报警, 不参与装饰) */
+  --alarm: #D64545;
+  --alarm-wash: #FBECEC;
+  --amber: #C77700;
+
+  /* 圆角 */
+  --radius-card: 28rpx;
+  --radius-inner: 20rpx;
+
+  background-color: var(--bg-canvas);
+  color: var(--ink-primary);
+  font-family: -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Hiragino Sans GB',
+    'Microsoft YaHei', sans-serif;
+  font-size: 28rpx;
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+}
+
+.container {
+  min-height: 100vh;
+  box-sizing: border-box;
+  padding: 24rpx 32rpx calc(48rpx + env(safe-area-inset-bottom));
+}
+
+/* ---------- 通用卡片 ---------- */
+.card {
+  background-color: var(--bg-surface);
+  border-radius: var(--radius-card);
+  border: 1rpx solid var(--border-hair);
+  box-shadow: 0 8rpx 24rpx rgba(24, 39, 32, 0.04);
+  box-sizing: border-box;
+}
+
+/* ---------- 通用文字层级 ---------- */
+.t-title {
+  font-size: 40rpx;
+  font-weight: 600;
+  letter-spacing: 0.5rpx;
+  color: var(--ink-primary);
+}
+
+.t-sub {
+  font-size: 24rpx;
+  color: var(--ink-secondary);
+}
+
+.t-caption {
+  font-size: 22rpx;
+  color: var(--ink-tertiary);
+}
+
+/* ---------- 通用按钮(触控目标 ≥ 88rpx, 按压态位移反馈) ---------- */
+.btn-primary {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 88rpx;
+  padding: 0 40rpx;
+  background-color: var(--accent);
+  color: #FFFFFF;
+  font-size: 30rpx;
+  font-weight: 600;
+  border-radius: var(--radius-inner);
+  border: none;
+  transition: transform 0.12s ease, background-color 0.12s ease;
+}
+
+.btn-primary::after {
+  border: none;
+}
+
+.btn-primary:active {
+  background-color: var(--accent-pressed);
+  transform: translateY(2rpx);
+}
+
+.btn-ghost {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 88rpx;
+  padding: 0 40rpx;
+  background-color: transparent;
+  color: var(--accent);
+  font-size: 30rpx;
+  font-weight: 500;
+  border-radius: var(--radius-inner);
+  border: 1rpx solid rgba(30, 142, 85, 0.35);
+  transition: transform 0.12s ease, background-color 0.12s ease;
+}
+
+.btn-ghost::after {
+  border: none;
+}
+
+.btn-ghost:active {
+  background-color: var(--bg-wash);
+  transform: translateY(2rpx);
+}
+
+/* ---------- 呼吸点(在线状态的持续微动效, 仅用 opacity) ---------- */
+.pulse-dot {
+  width: 14rpx;
+  height: 14rpx;
+  border-radius: 50%;
+  background-color: var(--accent);
+  animation: dot-breathe 2.4s ease-in-out infinite;
+}
+
+@keyframes dot-breathe {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.35; }
+}

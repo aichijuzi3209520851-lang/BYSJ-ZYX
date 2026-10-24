@@ -1,0 +1,287 @@
+/* 传感器数据页样式 —— 遵循 app.wxss 设计令牌 */
+
+.container {
+  padding-top: 32rpx;
+}
+
+/* ---------- 连接状态栏 ---------- */
+.conn-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 24rpx 28rpx;
+  margin-bottom: 24rpx;
+  border-left: 8rpx solid var(--ink-tertiary);
+  transition: border-color 0.3s ease;
+}
+
+.conn-bar--on {
+  border-left-color: var(--accent);
+}
+
+.conn-info {
+  display: flex;
+  align-items: center;
+}
+
+.conn-dot--off {
+  background-color: var(--ink-tertiary);
+  animation: none;
+}
+
+.conn-text {
+  display: flex;
+  flex-direction: column;
+  margin-left: 20rpx;
+}
+
+.conn-title {
+  font-size: 30rpx;
+  font-weight: 600;
+  color: var(--ink-primary);
+}
+
+.conn-btn {
+  min-width: 120rpx;
+  min-height: 64rpx;
+  margin: 0;
+  padding: 0 24rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background-color: var(--accent);
+  color: #FFFFFF;
+  font-size: 26rpx;
+  font-weight: 500;
+  border-radius: 16rpx;
+  line-height: 1;
+}
+
+.conn-btn--ghost {
+  background-color: transparent;
+  color: var(--alarm);
+  border: 1rpx solid rgba(214, 69, 69, 0.4);
+}
+
+.conn-btn::after {
+  border: none;
+}
+
+/* ---------- 报警横幅 ---------- */
+.alarm-banner {
+  display: flex;
+  align-items: center;
+  padding: 24rpx 28rpx;
+  margin-bottom: 24rpx;
+  background-color: var(--alarm-wash);
+  border-color: rgba(214, 69, 69, 0.25);
+}
+
+.alarm-icon {
+  width: 56rpx;
+  height: 56rpx;
+}
+
+.alarm-text {
+  display: flex;
+  flex-direction: column;
+  margin-left: 20rpx;
+}
+
+.alarm-title {
+  font-size: 30rpx;
+  font-weight: 600;
+  color: var(--alarm);
+}
+
+.alarm-detail {
+  color: var(--alarm);
+  opacity: 0.75;
+}
+
+/* ---------- 数据网格 ---------- */
+.grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 24rpx;
+}
+
+.cell {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  padding: 28rpx;
+  transition: border-color 0.3s ease;
+}
+
+.cell--alarm {
+  border-color: rgba(214, 69, 69, 0.35);
+  background-color: #FFFDFD;
+}
+
+.cell-icon {
+  width: 64rpx;
+  height: 64rpx;
+  margin-bottom: 16rpx;
+}
+
+.cell-name {
+  font-size: 26rpx;
+  font-weight: 500;
+  color: var(--ink-secondary);
+}
+
+.cell-value {
+  font-size: 56rpx;
+  font-weight: 600;
+  color: var(--ink-primary);
+  line-height: 1.25;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -1rpx;
+}
+
+.cell--alarm .cell-value {
+  color: var(--alarm);
+}
+
+.cell-value--text {
+  font-size: 40rpx;
+}
+
+.cell-unit {
+  font-size: 26rpx;
+  font-weight: 400;
+  color: var(--ink-tertiary);
+  margin-left: 6rpx;
+  letter-spacing: 0;
+}
+
+.cell-hint {
+  margin-top: 8rpx;
+}
+
+/* ---------- 更新时间 ---------- */
+.update-row {
+  display: flex;
+  justify-content: center;
+  padding: 28rpx 0 8rpx;
+}
+
+/* ---------- 配置弹窗 ---------- */
+.modal-mask {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: rgba(24, 39, 32, 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+  padding: 48rpx;
+}
+
+.modal {
+  width: 100%;
+  max-height: 80vh;
+  padding: 40rpx 36rpx calc(32rpx + env(safe-area-inset-bottom));
+  display: flex;
+  flex-direction: column;
+}
+
+.modal-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 28rpx;
+}
+
+.modal-close {
+  font-size: 44rpx;
+  line-height: 1;
+  color: var(--ink-tertiary);
+  padding: 8rpx 12rpx;
+}
+
+/* ---------- 表单 ---------- */
+.field {
+  display: flex;
+  flex-direction: column;
+  margin-bottom: 24rpx;
+}
+
+.field-label {
+  font-size: 26rpx;
+  font-weight: 500;
+  color: var(--ink-secondary);
+  margin-bottom: 12rpx;
+}
+
+.field-input {
+  min-height: 88rpx;
+  padding: 0 24rpx;
+  background-color: var(--bg-canvas);
+  border: 1rpx solid var(--border-hair);
+  border-radius: var(--radius-inner);
+  font-size: 28rpx;
+  color: var(--ink-primary);
+}
+
+.field-placeholder {
+  color: var(--ink-tertiary);
+}
+
+/* ---------- 连接历史 ---------- */
+.history {
+  margin: 8rpx 0 28rpx;
+}
+
+.history-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12rpx;
+}
+
+.history-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 18rpx 24rpx;
+  margin-bottom: 12rpx;
+  background-color: var(--bg-canvas);
+  border: 1rpx solid var(--border-hair);
+  border-radius: var(--radius-inner);
+}
+
+.history-info {
+  display: flex;
+  flex-direction: column;
+}
+
+.history-topic {
+  font-size: 28rpx;
+  font-weight: 500;
+  color: var(--ink-primary);
+}
+
+.history-del {
+  font-size: 24rpx;
+  color: var(--ink-tertiary);
+  padding: 8rpx 12rpx;
+}
+
+/* ---------- 弹窗底部按钮 ---------- */
+.modal-foot {
+  display: flex;
+  gap: 20rpx;
+  margin-top: 8rpx;
+}
+
+.modal-foot .btn-primary,
+.modal-foot .btn-ghost {
+  flex: 1;
+  min-height: 80rpx;
+  padding: 0;
+}
