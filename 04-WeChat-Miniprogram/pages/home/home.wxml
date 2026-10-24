@@ -1,10 +1,15 @@
 <!-- 首页 -->
 <view class="container">
 
-  <!-- 顶部品牌区: 温室大棚实拍背景 + 底部渐变遮罩, 文字压在下沿暗区 -->
+  <!-- 顶部品牌区: 温室主题轮播背景 + 底部渐变遮罩, 文字固定压在下沿暗区 -->
   <view class="hero">
-    <image class="hero-bg" src="/images/hero-greenhouse.jpg" mode="aspectFill" />
-    <view class="hero-scrim"></view>
+    <swiper class="hero-swiper" autoplay="{{true}}" interval="4000" duration="500"
+      circular="{{true}}" bindchange="onSlideChange">
+      <swiper-item wx:for="{{slides}}" wx:key="id">
+        <image class="hero-bg" src="{{item.src}}" mode="aspectFill" />
+        <view class="hero-scrim"></view>
+      </swiper-item>
+    </swiper>
 
     <view class="hero-content">
       <view class="hero-badge">
@@ -14,6 +19,11 @@
       <view class="hero-title-group">
         <text class="hero-title">智能温室大棚监测</text>
         <text class="hero-sub">Smart Greenhouse Monitoring</text>
+        <!-- 自定义轮播指示点 -->
+        <view class="hero-dots">
+          <view wx:for="{{slides}}" wx:key="id"
+            class="hero-dot-ind {{currentSlide === index ? 'hero-dot-ind--on' : ''}}"></view>
+        </view>
       </view>
     </view>
   </view>
