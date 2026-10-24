@@ -1,12 +1,13 @@
 # 智能温室大棚物联网监控系统 · Smart Greenhouse IoT System
 
 ![STM32](https://img.shields.io/badge/STM32-F103C8T6-blue?style=for-the-badge&logo=stmicroelectronics&logoColor=white)
+![FreeRTOS](https://img.shields.io/badge/FreeRTOS-V10.5.1-ff6600?style=for-the-badge)
 ![C#](https://img.shields.io/badge/C%23-WinForms-512BD4?style=for-the-badge&logo=csharp&logoColor=white)
 ![EMQX](https://img.shields.io/badge/EMQX-5.0.26-FF6A00?style=for-the-badge&logo=eclipsemosquitto&logoColor=white)
 ![WeChat](https://img.shields.io/badge/微信小程序-Native-07C160?style=for-the-badge&logo=wechat&logoColor=white)
 ![License](https://img.shields.io/badge/License-MIT-green?style=for-the-badge)
 
-一套完整的**毕业设计级**温室大棚物联网监控系统：STM32 下位机采集温室环境数据，
+一套完整的**毕业设计级**温室大棚物联网监控系统：STM32 下位机（**FreeRTOS 实时操作系统**）采集温室环境数据，
 PC 上位机通过串口解析后经 MQTT 上云，微信小程序与远程客户端订阅数据并可下发控制指令，
 实现"**感知 — 传输 — 展示 — 控制**"全链路闭环。
 
@@ -19,9 +20,9 @@ PC 上位机通过串口解析后经 MQTT 上云，微信小程序与远程客�
                                  │ ◀ green/control ───────┘ 发布控制指令
   ┌──────────────────┐  串口9600  ┌──┴───────────────────┐
   │  STM32F103C8T6   │───────────▶│  PC 上位机 (WinForms)  │
-  │  下位机固件       │◀───────────│  智能温室.exe          │
-  └─┬────┬────┬────┬─┘  指令透传   └──────────────────────┘
-    │    │    │    │
+  │  FreeRTOS V2.0   │◀───────────│  智能温室.exe          │
+  │  4任务架构        │  指令透传   └──────────────────────┘
+  └─┬────┬────┬────┬─┘
   DHT11 土壤湿度 烟雾  OLED/LED/蜂鸣器/舵机(天窗)/电机(风扇)
 ```
 
@@ -29,14 +30,15 @@ PC 上位机通过串口解析后经 MQTT 上云，微信小程序与远程客�
 
 | 目录 | 内容 | 技术栈 |
 | --- | --- | --- |
-| [`01-STM32-Firmware`](./01-STM32-Firmware) | 下位机固件：数据采集、OLED 显示、声光报警、执行器联动、双串口指令 | C / Keil MDK5 / 标准外设库 |
+| [`01-STM32-Firmware`](./01-STM32-Firmware) | 下位机固件：FreeRTOS 4 任务架构、数据采集、OLED 显示、声光报警、执行器联动、双串口指令毫秒级响应 | C / Keil MDK5 / 标准外设库 / FreeRTOS V10.5.1 |
 | [`02-PC-UpperComputer`](./02-PC-UpperComputer) | PC 上位机：串口解析、曲线图表、MQTT 发布/订阅转发、视频监控面板 | C# .NET Framework 4.7.2 / WinForms / MQTTnet |
 | [`03-EMQX-Server`](./03-EMQX-Server) | EMQX 一键启动器（MQTT.exe）与服务器部署说明 | C# .NET 10 控制台 |
-| [`04-WeChat-Miniprogram`](./04-WeChat-Miniprogram) | 微信小程序：数据六宫格、报警提醒、MQTT 配置与历史 | 原生小程序 / MQTT over WebSocket |
+| [`04-WeChat-Miniprogram`](./04-WeChat-Miniprogram) | 微信小程序：温室主题轮播首页、数据六宫格、报警提醒、MQTT 配置与历史 | 原生小程序 / MQTT over WebSocket |
 
 ## 核心特性
 
 - **三层架构、一份数据**：固件（1.5s/帧）→ 上位机（解析 + 发布 `green/data`）→ 小程序（订阅展示）
+- **下位机 FreeRTOS 任务化**：传感器采集 / 报警控制 / 串口通信 / OLED 显示 4 任务抢占调度，串口命令响应从轮询版最坏 1.5s 降至**毫秒级**（中断→队列直驱）；DHT11 µs 级时序以挂起调度器保护；DWT 微秒延时彻底解除 SysTick 占用（详见 [固件 RTOS 改造方案](./01-STM32-Firmware/docs/RTOS改造方案.md)）
 - **控制下行链路**：任意 MQTT 客户端向 `green/control` 发指令 → 上位机原文透传串口 → 固件执行（模式切换 / 天窗舵机 / 风扇电机）
 - **统一报警阈值（三端一致，固件为权威判定源）**：
 
@@ -48,6 +50,7 @@ PC 上位机通过串口解析后经 MQTT 上云，微信小程序与远程客�
   | 空气质量 | 烟雾判定 bad | 红灯 + 风扇全速排风 + 蜂鸣器 |
 
 - **稳定的小程序 MQTT 接入**：keep-alive 60s + 30s PINGREQ 心跳 + 指数退避自动重连 + DISCONNECT 优雅退出
+- **小程序温室主题轮播首页**：4 张 Pexels 免费商用实拍图（大棚纵览/番茄/草莓/LED 垂直农场）自动轮播 + 胶囊指示点
 - **上位机附加能力**：GDI+ 实时三曲线图、CSV 导出、ESP32-CAM MJPEG 视频监控面板
 
 ## 数据契约
@@ -129,6 +132,7 @@ Visual Studio 2019+ 打开 `02-PC-UpperComputer/DHT11.csproj`（NuGet 会自动�
 ## 相关文档
 
 - [固件说明与引脚表](./01-STM32-Firmware/README.md)
+- [固件 FreeRTOS 改造方案](./01-STM32-Firmware/docs/RTOS改造方案.md)
 - [上位机 MQTT 使用说明](./02-PC-UpperComputer/MQTT功能使用说明.md)
 - [EMQX 部署与一键启动器](./03-EMQX-Server/README.md)
 - [小程序说明](./04-WeChat-Miniprogram/README.md)
