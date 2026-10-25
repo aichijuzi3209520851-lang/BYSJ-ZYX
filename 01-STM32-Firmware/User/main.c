@@ -281,6 +281,7 @@ uint8_t Handle_Alarms(void)
 int main(void)
 {
     uint8_t temp_humi_alarm_status;  // 温湿度报警状态
+    uint8_t dht11_ok;                // DHT11本轮读取成功标志(OLED显示用)
 
     uart_init(9600);     // 初始化串口1,波特率9600
     uart3_init(9600);    // 初始化串口3,波特率9600
@@ -296,36 +297,38 @@ int main(void)
     // 固定显示标识
     OLED_ShowString(1, 1, "Temp:  C");  // 第一行显示温度标识
     OLED_ShowString(2, 1, "Humi:  %RH");// 第二行显示湿度标识
-    OLED_ShowString(3, 1, "Soil Water:");  // 第三行显示土壤湿度标签(占第1~11列)
-    OLED_ShowChar(3, 15, '%');             // 百分号固定在第15列(数值占第12~14列)
+    OLED_ShowString(3, 1, "Soil:");        // 第三行显示土壤湿度标签(右侧留白, 预留光照显示)
+    OLED_ShowChar(3, 9, '%');              // 百分号固定在第9列(数值占第6~8列)
     OLED_ShowString(4, 1, "Air: ");      // 第四行显示空气质量标识
 
     while(1)
     {
         // 读取温湿度数据
-        if(DHT11_Read_Data(&temperature, &humidity) == 0)  // 成功读取数据
+        dht11_ok = (DHT11_Read_Data(&temperature, &humidity) == 0);  // 本轮读取结果
+        if(dht11_ok)  // 成功读取数据
         {
             // 串口打印
             printf("Temp:%dC   Humi:%d%%RH   ", temperature, humidity);
             OLED_ShowNum(1, 6, temperature, 2);  // OLED显示温度
             OLED_ShowNum(2, 6, humidity, 2);    // OLED显示湿度
-            OLED_ShowString(4, 5, "       ");   // 清除错误信息
         }
         else
         {
             printf("DHT11 Read Failed!   ");            // 读取失败时提示
-            OLED_ShowString(4, 5, "Error!");  // 显示错误信息
+            OLED_ShowString(1, 6, "--");  // 数值区显示占位符(等宽覆盖无残留)
+            OLED_ShowString(2, 6, "--");
         }
 
         // 读取土壤湿度数据(D2-5-2K电容式,读数与湿度成反比)
         water_level = ADC1_GetValue(ADC_Channel_0);        // 读取原始ADC值(越干越大)
         water_percent = Soil_GetMoisturePercent();         // 反比映射为湿度百分比
         printf("Soil:%d%%(raw=%d)  ", water_percent, water_level);  // 打印百分比+raw(便于校准)
-        OLED_ShowNum(3, 12, water_percent, 3);       // OLED显示湿度百分比(占第12~14列)
+        OLED_ShowNum(3, 6, water_percent, 3);         // OLED显示湿度百分比(占第6~8列)
 
         // 检测空气质量
         Check_Air_Quality();
-        OLED_ShowString(4, 5, air_status);        // 显示空气质量状态
+        OLED_ShowString(4, 5, "      ");          // 先清后写, 消除Error!/nice切换残留
+        OLED_ShowString(4, 5, dht11_ok ? air_status : "Error!");  // DHT11失败时提示
 
         // 处理串口指令
         Process_Serial_Command();
