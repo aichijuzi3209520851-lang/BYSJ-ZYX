@@ -1,14 +1,18 @@
-﻿/**
+/**
   ******************************************************************************
   * @file    System/PWM.c
-  * @brief   TIM2 PWM 输出驱动实现(舵机/电机共用)
-  * @version V1.0
-  * @date    2026-09-20
-  * @note    预分频72 -> 1MHz计数(1us一格), ARR=20000 -> 20ms周期
-  *          CH2(PA1) -> 舵机(TIM2_CH2),  CH3(PA2) -> 电机调速(TIM2_CH3)
+  * @brief   TIM2 PWM 输出驱动实现(舵机/电机共用同一时基)
+  * @author  LCW
+  * @version V1.2
+  * @date    2026-10-25
+  * @note    时基设计: 预分频72 -> 计数频率1MHz(1us/格),
+  *          ARR=20000 -> 溢出周期20ms(50Hz, 舵机标准帧频)
+  *          通道分配: CH2(PA1) -> 舵机(Servo.c), CH3(PA2) -> 电机(Motor.c)
+  *          PWM模式1: 计数值<CCR时输出有效电平, 占空比Duty=CCR/(ARR+1)
   ******************************************************************************
   * @history
   *   V1.0  2026-09-20  首次发布(注释规范化)
+  *   V1.2  2026-10-25  交接级注释升级(纯注释零代码变更)
   ******************************************************************************
   */
 #include "stm32f10x.h"                  // Device header
@@ -17,24 +21,27 @@
   * 函    数：PWM初始化
   * 参    数：无
   * 返 回 值：无
+  * @note    舵机与电机共用TIM2时基: 任一方调用PWM_Init均完成整体配置,
+  *          重复调用幂等(Motor_Init与Servo_Init都各调一次属预期);
+  *          执行耗时<0.1ms
   */
 void PWM_Init(void)
 {
 	/*开启时钟*/
 	RCC_APB1PeriphClockCmd(RCC_APB1Periph_TIM2, ENABLE);			//开启TIM2的时钟
 	RCC_APB2PeriphClockCmd(RCC_APB2Periph_GPIOA, ENABLE);			//开启GPIOA的时钟
-	
+
 	/*GPIO初始化*/
 	GPIO_InitTypeDef GPIO_InitStructure;
 	GPIO_InitStructure.GPIO_Mode = GPIO_Mode_AF_PP;
 	GPIO_InitStructure.GPIO_Pin = GPIO_Pin_1 | GPIO_Pin_2;
 	GPIO_InitStructure.GPIO_Speed = GPIO_Speed_50MHz;
-	GPIO_Init(GPIOA, &GPIO_InitStructure);							//将PA2引脚初始化为复用推挽输出	
+	GPIO_Init(GPIOA, &GPIO_InitStructure);							//将PA2引脚初始化为复用推挽输出
 																	//受外设控制的引脚，均需要配置为复用模式
-	
+
 	/*配置时钟源*/
 	TIM_InternalClockConfig(TIM2);		//选择TIM2为内部时钟，若不调用此函数，TIM默认也为内部时钟
-	
+
 	/*时基单元初始化*/
 	TIM_TimeBaseInitTypeDef TIM_TimeBaseInitStructure;				//定义结构体变量
 	TIM_TimeBaseInitStructure.TIM_ClockDivision = TIM_CKD_DIV1;     //时钟分频，选择不分频，此参数用于配置滤波器时钟，不影响时基单元功能
@@ -43,8 +50,8 @@ void PWM_Init(void)
 	TIM_TimeBaseInitStructure.TIM_Prescaler = 72 - 1;               //预分频器，即PSC的值，72分频后1MHz，1us一个计数
 	TIM_TimeBaseInitStructure.TIM_RepetitionCounter = 0;            //重复计数器，高级定时器才会用到
 	TIM_TimeBaseInit(TIM2, &TIM_TimeBaseInitStructure);             //将结构体变量交给TIM_TimeBaseInit，配置TIM2的时基单元
-	
-	/*输出比较初始化*/ 
+
+	/*输出比较初始化*/
 	TIM_OCInitTypeDef TIM_OCInitStructure;							//定义结构体变量
 	TIM_OCStructInit(&TIM_OCInitStructure);                         //结构体初始化，若结构体没有完整赋值
 	                                                                //则最好执行此函数，给结构体所有成员都赋一个默认值
@@ -55,14 +62,14 @@ void PWM_Init(void)
 	TIM_OCInitStructure.TIM_Pulse = 0;								//初始的CCR值
 	TIM_OC2Init(TIM2, &TIM_OCInitStructure);                        //将结构体变量交给TIM_OC2Init，配置TIM2的输出比较通道2
 	TIM_OC3Init(TIM2, &TIM_OCInitStructure);                        //将结构体变量交给TIM_OC3Init，配置TIM2的输出比较通道3
-	
+
 	/*TIM使能*/
 	TIM_Cmd(TIM2, ENABLE);			//使能TIM2，定时器开始运行
 }
 
 /**
-  * 函    数：PWM设置CCR
-  * 参    数：Compare 要写入的CCR的值，范围：0~100
+  * 函    数：PWM设置CCR(通道3, 电机调速)
+  * 参    数：Compare 要写入的CCR的值，范围：0~20000(100%占空比)
   * 返 回 值：无
   * 注意事项：CCR和ARR共同决定占空比，此函数仅设置CCR的值，并不直接是占空比
   *           占空比Duty = CCR / (ARR + 1)
@@ -73,8 +80,8 @@ void PWM_SetCompare3(uint16_t Compare)
 }
 
 /**
-  * 函    数：PWM设置CCR2
-  * 参    数：Compare 要写入的CCR2的值，范围：0~2500
+  * 函    数：PWM设置CCR(通道2, 舵机脉宽)
+  * 参    数：Compare 要写入的CCR2的值，范围：500~2500(对应0~180°)
   * 返 回 值：无
   */
 void PWM_SetCompare2(uint16_t Compare)
