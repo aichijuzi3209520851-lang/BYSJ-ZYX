@@ -33,6 +33,7 @@
 #include "usart.h"
 #include "OLED.h"
 #include "Water.h"  // 土壤湿度传感器驱动头文件(D2-5-2K)
+#include "Light.h"  // 光敏传感器驱动头文件(仅采集, 不联动蜂鸣器)
 #include "Motor.h"
 #include "Servo.h"
 #include <string.h>  // 字符串函数库
@@ -61,6 +62,8 @@ char air_status[10] = "nice";  // 空气质量状态
 uint8_t servo_angle = 0;  // 舵机当前角度状态(0或180)
 uint8_t manual_mode = 0;  // 手动控制模式(1=串口手动控制,0=自动报警控制)
 uint8_t motor_status = 0;  // 电机状态(0=停止,1=运行)
+uint16_t light_raw;          // 光照强度原始ADC值(0~4095, 方向见Light.h校准宏)
+uint8_t light_percent;       // 光照强度百分比(0~100, 越大越亮)
 
 /**
   * @brief  初始化所有报警相关硬件(传感器/报警LED/蜂鸣器)
@@ -288,6 +291,7 @@ int main(void)
     DHT11_Init();        // 初始化DHT11温湿度传感器
     OLED_Init();         // 初始化OLED显示屏
     ADC1_Init();         // 初始化ADC(土壤湿度传感器)
+    Light_Init();        // 初始化光敏(PB1=ADC通道9, 复用ADC1, 须在ADC1_Init后)
     Alarm_Hardware_Init();// 初始化所有报警硬件
     Motor_Init();        // 初始化电机
     Servo_Init();        // 初始化舵机
@@ -299,6 +303,8 @@ int main(void)
     OLED_ShowString(2, 1, "Humi:  %RH");// 第二行显示湿度标识
     OLED_ShowString(3, 1, "Soil:");        // 第三行显示土壤湿度标签(右侧留白, 预留光照显示)
     OLED_ShowChar(3, 9, '%');              // 百分号固定在第9列(数值占第6~8列)
+    OLED_ShowString(3, 11, "L:");          // 光照标签(列11~12, 数值占13~15)
+    OLED_ShowChar(3, 16, '%');             // 光照百分号(列16)
     OLED_ShowString(4, 1, "Air: ");      // 第四行显示空气质量标识
 
     while(1)
@@ -324,6 +330,12 @@ int main(void)
         water_percent = Soil_GetMoisturePercent();         // 反比映射为湿度百分比
         printf("Soil:%d%%(raw=%d)  ", water_percent, water_level);  // 打印百分比+raw(便于校准)
         OLED_ShowNum(3, 6, water_percent, 3);         // OLED显示湿度百分比(占第6~8列)
+
+        // 读取光照强度(仅采集展示, 不参与报警/蜂鸣联动)
+        light_raw = Light_GetRaw();
+        light_percent = Light_GetPercent();
+        printf("Light:%d%%  ", light_percent);
+        OLED_ShowNum(3, 13, light_percent, 3);   // OLED显示光照百分比(占第13~15列)
 
         // 检测空气质量
         Check_Air_Quality();
