@@ -553,6 +553,28 @@ void vApplicationStackOverflowHook(TaskHandle_t xTask, char *pcTaskName)
 int main(void)
 {
     SysState_t init_state;
+    volatile uint32_t dly;
+    uint8_t blink;
+
+    /* ---- 上电心跳: 红灯(PB10)快闪2次 ---- */
+    /* 位于一切外设初始化之前, 不依赖DWT/时钟树/RTOS——用于现场判活:
+     * 看到闪2次 = 程序已运行, 黑屏问题在OLED/接线侧;
+     * 一次不闪   = 固件未烧入或未起跑(供电/复位问题) */
+    RCC_APB2PeriphClockCmd(RCC_APB2Periph_GPIOB, ENABLE);
+    {
+        GPIO_InitTypeDef heartbeat_gpio;
+        heartbeat_gpio.GPIO_Pin   = GPIO_Pin_10;
+        heartbeat_gpio.GPIO_Mode  = GPIO_Mode_Out_PP;
+        heartbeat_gpio.GPIO_Speed = GPIO_Speed_50MHz;
+        GPIO_Init(GPIOB, &heartbeat_gpio);
+    }
+    for (blink = 0; blink < 2; blink++)
+    {
+        GPIO_ResetBits(GPIOB, GPIO_Pin_10);      /* 红灯亮(低电平点亮) */
+        for (dly = 0; dly < 600000; dly++);      /* ~80ms裸延时, 不依赖外设 */
+        GPIO_SetBits(GPIOB, GPIO_Pin_10);        /* 红灯灭 */
+        for (dly = 0; dly < 600000; dly++);
+    }
 
     /* ---- NVIC分组显式固化(4位全抢占, 与FreeRTOS优先级模型配套) ---- */
     NVIC_PriorityGroupConfig(NVIC_PriorityGroup_4);
