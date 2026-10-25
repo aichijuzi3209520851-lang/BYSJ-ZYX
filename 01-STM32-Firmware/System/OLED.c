@@ -346,11 +346,13 @@ static void OLED_Power_Init(void)
 
 void OLED_Init(void)
 {
-	uint32_t i, j;
+	/* volatile: 防止O2等高优化等级把空循环整体删除(实测O2下被删致上电延时归零,
+	 * SSD1306内部电源未就绪即收初始化命令 -> 整屏竖条纹花屏) */
+	volatile uint32_t i, j;
 
 	OLED_Power_Init();					//先给模块上电(PB7高/PB6低), 再等内部电源就绪
 
-	for (i = 0; i < 1000; i++)			//上电延时（保守等待SSD1306内部电源就绪）
+	for (i = 0; i < 1000; i++)			//上电延时~100ms（等待SSD1306内部电源就绪, 规范>=100ms）
 	{
 		for (j = 0; j < 1000; j++);
 	}
