@@ -1,0 +1,154 @@
+<!-- 执行器控制页 -->
+<view class="container">
+
+  <!-- 连接状态栏 -->
+  <view class="conn-bar card {{mqttConnected ? 'conn-bar--on' : ''}}">
+    <view class="conn-info">
+      <view class="pulse-dot {{mqttConnected ? '' : 'conn-dot--off'}}"></view>
+      <view class="conn-text">
+        <text class="conn-title">{{mqttConnected ? '已连接 EMQX' : (connecting ? '连接中…' : '未连接服务器')}}</text>
+        <text class="conn-sub t-caption">{{mqttConnected ? mqttTopic : '点击右侧配置填入服务器与主题'}}</text>
+      </view>
+    </view>
+    <button class="conn-btn {{mqttConnected ? 'conn-btn--ghost' : ''}}" size="mini"
+      bindtap="{{mqttConnected ? 'disconnectMqtt' : 'showMqttConfig'}}">
+      {{mqttConnected ? '断开' : '配置'}}
+    </button>
+  </view>
+
+  <!-- 控制模式切换 -->
+  <view class="card mode-card">
+    <view class="mode-head">
+      <text class="mode-title">控制模式</text>
+      <text class="t-caption">固件上电默认自动</text>
+    </view>
+
+    <view class="mode-seg">
+      <view class="mode-seg-item {{mode === 'auto' ? 'mode-seg-item--on' : ''}}"
+        hover-class="mode-seg-hover" bindtap="setMode" data-mode="auto">
+        <text>自动联动</text>
+      </view>
+      <view class="mode-seg-item {{mode === 'manual' ? 'mode-seg-item--on' : ''}}"
+        hover-class="mode-seg-hover" bindtap="setMode" data-mode="manual">
+        <text>手动控制</text>
+      </view>
+    </view>
+
+    <text class="mode-desc t-caption">{{mode === 'auto'
+      ? '设备按统一阈值自主开关天窗与风扇, 无需人工干预'
+      : '由下方按钮直接开关天窗与风扇, 覆盖联动策略'}}</text>
+  </view>
+
+  <!-- 设备控制卡片 -->
+  <view class="grid">
+    <!-- 天窗(舵机) -->
+    <view class="device card">
+      <image class="device-icon"
+        src="{{device.servoStatus === 'ON' ? '/ICON/窗户-开状态.png' : '/ICON/窗户-关状态.png'}}"
+        mode="aspectFit" />
+      <text class="device-name">天窗</text>
+      <view class="device-chip {{device.servoStatus === 'ON' ? 'device-chip--on' : ''}}">
+        <view class="chip-dot"></view>
+        <text class="chip-text">{{device.servoStatus === 'ON' ? '开启' : (device.servoStatus === 'OFF' ? '关闭' : '待数据')}}</text>
+      </view>
+      <view class="device-btns">
+        <button class="dev-btn dev-btn--open {{mode !== 'manual' ? 'dev-btn--disabled' : ''}}"
+          hover-class="dev-btn-hover" bindtap="onWindowOpen">打开</button>
+        <button class="dev-btn dev-btn--close {{mode !== 'manual' ? 'dev-btn--disabled' : ''}}"
+          hover-class="dev-btn-hover" bindtap="onWindowClose">关闭</button>
+      </view>
+      <text class="device-hint t-caption">舵机 0° / 180°</text>
+    </view>
+
+    <!-- 风扇(电机) -->
+    <view class="device card">
+      <image class="device-icon"
+        src="{{device.motorStatus === 'ON' ? '/ICON/风扇-开状态.png' : '/ICON/风扇-关状态.png'}}"
+        mode="aspectFit" />
+      <text class="device-name">风扇</text>
+      <view class="device-chip {{device.motorStatus === 'ON' ? 'device-chip--on' : ''}}">
+        <view class="chip-dot"></view>
+        <text class="chip-text">{{device.motorStatus === 'ON' ? '运行' : (device.motorStatus === 'OFF' ? '停止' : '待数据')}}</text>
+      </view>
+      <view class="device-btns">
+        <button class="dev-btn dev-btn--open {{mode !== 'manual' ? 'dev-btn--disabled' : ''}}"
+          hover-class="dev-btn-hover" bindtap="onFanOn">启动</button>
+        <button class="dev-btn dev-btn--close {{mode !== 'manual' ? 'dev-btn--disabled' : ''}}"
+          hover-class="dev-btn-hover" bindtap="onFanOff">停止</button>
+      </view>
+      <text class="device-hint t-caption">烟雾联动排风</text>
+    </view>
+  </view>
+
+  <!-- 最近指令 -->
+  <view class="card cmd-log">
+    <view class="cmd-row">
+      <text class="cmd-label">最近指令</text>
+      <text class="cmd-value">{{lastCmd ? lastCmd.text : '暂无'}}</text>
+    </view>
+    <view class="cmd-row" wx:if="{{lastCmd}}">
+      <text class="cmd-label">下发时间</text>
+      <text class="cmd-value">{{lastCmd.time}}</text>
+    </view>
+    <view class="cmd-row" wx:if="{{lastUpdateTime}}">
+      <text class="cmd-label">状态更新</text>
+      <text class="cmd-value">{{lastUpdateTime}}</text>
+    </view>
+    <text class="cmd-link t-caption">链路: 小程序 → EMQX({{controlTopic}}) → 上位机 → 串口 → STM32</text>
+  </view>
+
+  <!-- ==================== 配置弹窗 ==================== -->
+  <view class="modal-mask" wx:if="{{showConfig}}" catchtap="hideConfig">
+    <view class="modal card" catchtap="stopPropagation">
+      <view class="modal-head">
+        <text class="t-title">服务器配置</text>
+        <text class="modal-close" bindtap="hideConfig">×</text>
+      </view>
+
+      <view class="field">
+        <text class="field-label">服务器地址</text>
+        <input class="field-input" type="text" placeholder="例如 192.168.36.221"
+          placeholder-class="field-placeholder" value="{{mqttHost}}" bindinput="onHostInput" />
+      </view>
+
+      <view class="field">
+        <text class="field-label">WebSocket 端口</text>
+        <input class="field-input" type="number" placeholder="EMQX 默认 8083"
+          placeholder-class="field-placeholder" value="{{mqttPort}}" bindinput="onPortInput" />
+      </view>
+
+      <view class="field">
+        <text class="field-label">数据主题</text>
+        <input class="field-input" type="text" placeholder="与上位机发布主题一致(默认 green/data)"
+          placeholder-class="field-placeholder" value="{{mqttTopic}}" bindinput="onTopicInput" />
+      </view>
+
+      <view class="field">
+        <text class="field-label">指令主题(固定)</text>
+        <view class="field-static">{{controlTopic}}</view>
+      </view>
+
+      <!-- 连接历史(与传感器页共用) -->
+      <view class="history" wx:if="{{history.length > 0}}">
+        <view class="history-head">
+          <text class="field-label">连接历史</text>
+          <text class="t-caption">点击填入</text>
+        </view>
+        <view class="history-item" wx:for="{{history}}" wx:key="index"
+          data-item="{{item}}" bindtap="onHistoryTap">
+          <view class="history-info">
+            <text class="history-topic">{{item.topic}}</text>
+            <text class="t-caption">{{item.host}}:{{item.port}}</text>
+          </view>
+          <text class="history-del" catchtap="onHistoryRemove" data-index="{{index}}">移除</text>
+        </view>
+      </view>
+
+      <view class="modal-foot">
+        <button class="btn-ghost" bindtap="hideConfig">取消</button>
+        <button class="btn-primary" bindtap="saveConfigAndConnect">保存并连接</button>
+      </view>
+    </view>
+  </view>
+
+</view>

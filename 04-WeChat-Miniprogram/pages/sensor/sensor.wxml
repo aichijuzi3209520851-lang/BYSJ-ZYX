@@ -57,31 +57,33 @@
       <text class="cell-hint t-caption">过湿阈值 >{{thresholds.soilMoisture}}%</text>
     </view>
 
-    <!-- 空气质量 -->
-    <view class="cell card {{sensorData.airQuality === 'bad' ? 'cell--alarm' : ''}}">
-      <image class="cell-icon"
-        src="{{sensorData.airQuality === 'bad' ? '/ICON/空气质量劣状态.png' : '/ICON/空气质量优状态.png'}}"
-        mode="aspectFit" />
-      <text class="cell-name">空气质量</text>
-      <text class="cell-value cell-value--text">{{sensorData.airQuality === 'bad' ? '污染' : (sensorData.airQuality === 'nice' ? '良好' : '--')}}</text>
-      <text class="cell-hint t-caption">烟雾传感器判定</text>
+    <!-- 光照强度(仅采集展示, 与固件 Light.h 一致: 不参与报警联动) -->
+    <view class="cell card">
+      <image class="cell-icon" src="/ICON/光照.png" mode="aspectFit" />
+      <text class="cell-name">光照强度</text>
+      <text class="cell-value">{{sensorData.lightPercent == null ? '--' : sensorData.lightPercent}}<text class="cell-unit">%</text></text>
+      <text class="cell-hint t-caption">光敏电阻 · 仅展示</text>
     </view>
 
-    <!-- 天窗(舵机) -->
-    <view class="cell card">
-      <image class="cell-icon" src="{{sensorData.servoStatus === 'ON' ? '/ICON/窗户-开状态.png' : '/ICON/窗户-关状态.png'}}" mode="aspectFit" />
-      <text class="cell-name">天窗</text>
-      <text class="cell-value cell-value--text">{{sensorData.servoStatus === 'ON' ? '开启' : (sensorData.servoStatus === 'OFF' ? '关闭' : '--')}}</text>
-      <text class="cell-hint t-caption">舵机 0°/180°</text>
+    <!-- 空气质量(占满整行: 状态型文案, 宽度富余更适合横向排布) -->
+    <view class="cell cell--wide card {{sensorData.airQuality === 'bad' ? 'cell--alarm' : ''}}">
+      <image class="cell-icon" src="{{sensorData.airQuality === 'bad' ? '/ICON/空气质量劣状态.png' : '/ICON/空气质量优状态.png'}}" mode="aspectFit" />
+      <view class="cell-wide-body">
+        <text class="cell-name">空气质量</text>
+        <text class="cell-value cell-value--text">{{sensorData.airQuality === 'bad' ? '污染' : (sensorData.airQuality === 'nice' ? '良好' : '--')}}</text>
+        <text class="cell-hint t-caption">烟雾传感器判定</text>
+      </view>
     </view>
+  </view>
 
-    <!-- 风扇(电机) -->
-    <view class="cell card">
-      <image class="cell-icon" src="{{sensorData.motorStatus === 'ON' ? '/ICON/风扇-开状态.png' : '/ICON/风扇-关状态.png'}}" mode="aspectFit" />
-      <text class="cell-name">风扇</text>
-      <text class="cell-value cell-value--text">{{sensorData.motorStatus === 'ON' ? '运行' : (sensorData.motorStatus === 'OFF' ? '停止' : '--')}}</text>
-      <text class="cell-hint t-caption">烟雾联动排风</text>
+  <!-- 设备控制入口: 天窗/风扇控制已迁移至执行器页 -->
+  <view class="actuator-entry card" bindtap="goToActuator" hover-class="actuator-entry--hover">
+    <image class="actuator-entry-icon" src="/ICON/风扇-关状态.png" mode="aspectFit" />
+    <view class="actuator-entry-body">
+      <text class="actuator-entry-title">天窗 / 风扇控制</text>
+      <text class="t-caption">手动开关设备, 请前往「执行器」页</text>
     </view>
+    <text class="actuator-entry-arrow">›</text>
   </view>
 
   <!-- 更新时间 -->

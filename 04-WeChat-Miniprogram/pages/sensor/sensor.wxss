@@ -119,6 +119,24 @@
   background-color: #FFFDFD;
 }
 
+/* 整行卡片(空气质量): 横向排布, 图标左, 文案右 */
+.cell--wide {
+  grid-column: span 2;
+  flex-direction: row;
+  align-items: center;
+}
+
+.cell--wide .cell-icon {
+  margin-bottom: 0;
+}
+
+.cell-wide-body {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  margin-left: 20rpx;
+}
+
 .cell-icon {
   width: 64rpx;
   height: 64rpx;
@@ -166,6 +184,46 @@
   justify-content: center;
   padding: 28rpx 0 8rpx;
 }
+
+/* ---------- 执行器入口(天窗/风扇控制迁移至执行器页) ---------- */
+.actuator-entry {
+  display: flex;
+  align-items: center;
+  padding: 28rpx;
+  margin-top: 24rpx;
+  transition: transform 0.12s ease;
+}
+
+.actuator-entry--hover {
+  transform: translateY(2rpx);
+}
+
+.actuator-entry-icon {
+  width: 64rpx;
+  height: 64rpx;
+  flex-shrink: 0;
+}
+
+.actuator-entry-body {
+  display: flex;
+  flex-direction: column;
+  margin-left: 24rpx;
+  flex: 1;
+}
+
+.actuator-entry-title {
+  font-size: 30rpx;
+  font-weight: 600;
+  color: var(--ink-primary);
+}
+
+.actuator-entry-arrow {
+  font-size: 44rpx;
+  line-height: 1;
+  color: var(--ink-tertiary);
+  padding: 8rpx 12rpx;
+}
+
 
 /* ---------- 配置弹窗 ---------- */
 .modal-mask {
@@ -282,6 +340,7 @@
 .modal-foot .btn-primary,
 .modal-foot .btn-ghost {
   flex: 1;
+  min-width: 0;   /* 解除 button 默认宽度下限, 两按钮在弹窗内均分 */
   min-height: 80rpx;
   padding: 0;
 }

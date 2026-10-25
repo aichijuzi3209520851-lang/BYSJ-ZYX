@@ -56,8 +56,8 @@
     <view class="feature-row">
       <image class="feature-icon" src="/ICON/蜂鸣器-关状态.png" mode="aspectFit" />
       <view class="feature-body">
-        <text class="feature-title">远程查看</text>
-        <text class="feature-desc t-sub">EMQX 消息中间件分发，手机端随时掌握温室状态</text>
+        <text class="feature-title">远程监控</text>
+        <text class="feature-desc t-sub">EMQX 消息中间件分发，手机端查看数据并开关天窗风扇</text>
       </view>
     </view>
   </view>
@@ -66,7 +66,7 @@
   <view class="card meta">
     <view class="meta-item">
       <text class="meta-label">系统版本</text>
-      <text class="meta-value">V1.1</text>
+      <text class="meta-value">V1.2</text>
     </view>
     <view class="meta-divider"></view>
     <view class="meta-item">
@@ -82,7 +82,7 @@
 
   <!-- 开发者信息 -->
   <view class="card author">
-    <image class="author-avatar" src="/ICON/爱吃橘子.jpg" mode="aspectFill" />
+    <image class="author-avatar" src="/ICON/周颖暄.jpg" mode="aspectFill" />
     <view class="author-body">
       <text class="author-name">周颖暄</text>
       <text class="t-caption">毕业设计 · 物联网方向</text>

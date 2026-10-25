@@ -1,0 +1,404 @@
+/* 执行器控制页样式 —— 遵循 app.wxss 设计令牌 */
+
+.container {
+  padding-top: 32rpx;
+}
+
+/* ---------- 连接状态栏(与传感器页一致) ---------- */
+.conn-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 24rpx 28rpx;
+  margin-bottom: 24rpx;
+  border-left: 8rpx solid var(--ink-tertiary);
+  transition: border-color 0.3s ease;
+}
+
+.conn-bar--on {
+  border-left-color: var(--accent);
+}
+
+.conn-info {
+  display: flex;
+  align-items: center;
+}
+
+.conn-dot--off {
+  background-color: var(--ink-tertiary);
+  animation: none;
+}
+
+.conn-text {
+  display: flex;
+  flex-direction: column;
+  margin-left: 20rpx;
+}
+
+.conn-title {
+  font-size: 30rpx;
+  font-weight: 600;
+  color: var(--ink-primary);
+}
+
+.conn-btn {
+  min-width: 120rpx;
+  min-height: 64rpx;
+  margin: 0;
+  padding: 0 24rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background-color: var(--accent);
+  color: #FFFFFF;
+  font-size: 26rpx;
+  font-weight: 500;
+  border-radius: 16rpx;
+  line-height: 1;
+}
+
+.conn-btn--ghost {
+  background-color: transparent;
+  color: var(--alarm);
+  border: 1rpx solid rgba(214, 69, 69, 0.4);
+}
+
+.conn-btn::after {
+  border: none;
+}
+
+/* ---------- 模式切换卡片 ---------- */
+.mode-card {
+  padding: 28rpx 32rpx;
+  margin-bottom: 24rpx;
+}
+
+.mode-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  margin-bottom: 20rpx;
+}
+
+.mode-title {
+  font-size: 30rpx;
+  font-weight: 600;
+  color: var(--ink-primary);
+}
+
+.mode-seg {
+  display: flex;
+  padding: 6rpx;
+  background-color: var(--bg-canvas);
+  border: 1rpx solid var(--border-hair);
+  border-radius: var(--radius-inner);
+}
+
+.mode-seg-item {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 80rpx;
+  border-radius: 16rpx;
+  font-size: 28rpx;
+  font-weight: 500;
+  color: var(--ink-secondary);
+  transition: background-color 0.2s ease, color 0.2s ease, transform 0.12s ease;
+}
+
+.mode-seg-item--on {
+  background-color: var(--accent);
+  color: #FFFFFF;
+  font-weight: 600;
+}
+
+.mode-seg-hover {
+  transform: translateY(2rpx);
+}
+
+.mode-desc {
+  display: block;
+  margin-top: 20rpx;
+  line-height: 1.6;
+}
+
+/* ---------- 设备卡片 ---------- */
+.grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 24rpx;
+}
+
+.device {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 32rpx 24rpx 24rpx;
+  min-width: 0;
+}
+
+.device-icon {
+  width: 96rpx;
+  height: 96rpx;
+  margin-bottom: 16rpx;
+}
+
+.device-name {
+  font-size: 30rpx;
+  font-weight: 600;
+  color: var(--ink-primary);
+  margin-bottom: 12rpx;
+}
+
+/* 状态胶囊: 开启绿色 / 关闭中性 */
+.device-chip {
+  display: flex;
+  align-items: center;
+  padding: 6rpx 20rpx;
+  background-color: var(--bg-canvas);
+  border-radius: 999rpx;
+  margin-bottom: 24rpx;
+}
+
+.device-chip--on {
+  background-color: var(--bg-wash);
+}
+
+.chip-dot {
+  width: 12rpx;
+  height: 12rpx;
+  border-radius: 50%;
+  background-color: var(--ink-tertiary);
+  margin-right: 10rpx;
+}
+
+.device-chip--on .chip-dot {
+  background-color: var(--accent);
+  animation: dot-breathe 2.4s ease-in-out infinite;
+}
+
+.chip-text {
+  font-size: 24rpx;
+  color: var(--ink-secondary);
+}
+
+.device-chip--on .chip-text {
+  color: var(--accent);
+  font-weight: 500;
+}
+
+/* 开关按钮对: 开=主色 / 关=描边; 自动模式下呈禁用态 */
+.device-btns {
+  display: flex;
+  gap: 16rpx;
+  width: 100%;
+}
+
+.dev-btn {
+  flex: 1;
+  min-width: 0;   /* 解除微信 button 默认 184px 宽度下限, 允许 flex 均分 */
+  min-height: 88rpx;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 28rpx;
+  font-weight: 500;
+  border-radius: var(--radius-inner);
+  line-height: 1;
+  transition: transform 0.12s ease, opacity 0.2s ease;
+}
+
+.dev-btn::after {
+  border: none;
+}
+
+.dev-btn--open {
+  background-color: var(--accent);
+  color: #FFFFFF;
+}
+
+.dev-btn--close {
+  background-color: var(--bg-canvas);
+  color: var(--ink-secondary);
+  border: 1rpx solid var(--border-hair);
+}
+
+.dev-btn-hover {
+  transform: translateY(2rpx);
+}
+
+.dev-btn--disabled {
+  opacity: 0.4;
+}
+
+.device-hint {
+  margin-top: 16rpx;
+}
+
+/* ---------- 指令日志 ---------- */
+.cmd-log {
+  padding: 24rpx 28rpx;
+  margin-top: 24rpx;
+}
+
+.cmd-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10rpx 0;
+}
+
+.cmd-label {
+  font-size: 24rpx;
+  color: var(--ink-tertiary);
+}
+
+.cmd-value {
+  font-size: 26rpx;
+  font-weight: 500;
+  color: var(--ink-primary);
+  font-variant-numeric: tabular-nums;
+}
+
+.cmd-link {
+  display: block;
+  margin-top: 12rpx;
+  padding-top: 16rpx;
+  border-top: 1rpx solid var(--border-hair);
+}
+
+/* ---------- 配置弹窗(与传感器页一致) ---------- */
+.modal-mask {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: rgba(24, 39, 32, 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+  padding: 48rpx;
+}
+
+.modal {
+  width: 100%;
+  max-height: 80vh;
+  padding: 40rpx 36rpx calc(32rpx + env(safe-area-inset-bottom));
+  display: flex;
+  flex-direction: column;
+}
+
+.modal-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 28rpx;
+}
+
+.modal-close {
+  font-size: 44rpx;
+  line-height: 1;
+  color: var(--ink-tertiary);
+  padding: 8rpx 12rpx;
+}
+
+/* ---------- 表单 ---------- */
+.field {
+  display: flex;
+  flex-direction: column;
+  margin-bottom: 24rpx;
+}
+
+.field-label {
+  font-size: 26rpx;
+  font-weight: 500;
+  color: var(--ink-secondary);
+  margin-bottom: 12rpx;
+}
+
+.field-input {
+  min-height: 88rpx;
+  padding: 0 24rpx;
+  background-color: var(--bg-canvas);
+  border: 1rpx solid var(--border-hair);
+  border-radius: var(--radius-inner);
+  font-size: 28rpx;
+  color: var(--ink-primary);
+}
+
+.field-placeholder {
+  color: var(--ink-tertiary);
+}
+
+/* 只读字段(指令主题) */
+.field-static {
+  min-height: 88rpx;
+  padding: 0 24rpx;
+  display: flex;
+  align-items: center;
+  background-color: var(--bg-wash);
+  border-radius: var(--radius-inner);
+  font-size: 28rpx;
+  font-weight: 500;
+  color: var(--accent);
+}
+
+/* ---------- 连接历史 ---------- */
+.history {
+  margin: 8rpx 0 28rpx;
+}
+
+.history-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12rpx;
+}
+
+.history-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 18rpx 24rpx;
+  margin-bottom: 12rpx;
+  background-color: var(--bg-canvas);
+  border: 1rpx solid var(--border-hair);
+  border-radius: var(--radius-inner);
+}
+
+.history-info {
+  display: flex;
+  flex-direction: column;
+}
+
+.history-topic {
+  font-size: 28rpx;
+  font-weight: 500;
+  color: var(--ink-primary);
+}
+
+.history-del {
+  font-size: 24rpx;
+  color: var(--ink-tertiary);
+  padding: 8rpx 12rpx;
+}
+
+/* ---------- 弹窗底部按钮 ---------- */
+.modal-foot {
+  display: flex;
+  gap: 20rpx;
+  margin-top: 8rpx;
+}
+
+.modal-foot .btn-primary,
+.modal-foot .btn-ghost {
+  flex: 1;
+  min-width: 0;   /* 解除 button 默认宽度下限, 两按钮在弹窗内均分 */
+  min-height: 80rpx;
+  padding: 0;
+}

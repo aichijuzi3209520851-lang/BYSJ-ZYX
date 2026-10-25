@@ -1,14 +1,15 @@
 {
   "pages": [
     "pages/home/home",
-    "pages/sensor/sensor"
+    "pages/sensor/sensor",
+    "pages/actuator/actuator"
   ],
   "window": {
-    "navigationBarTextStyle": "white",
+    "navigationBarTextStyle": "black",
     "navigationBarTitleText": "智能温室大棚监测",
-    "navigationBarBackgroundColor": "#1E8E55",
+    "navigationBarBackgroundColor": "#F4F7F4",
     "backgroundColor": "#F4F7F4",
-    "backgroundTextStyle": "light",
+    "backgroundTextStyle": "dark",
     "enablePullDownRefresh": false
   },
   "tabBar": {
@@ -28,6 +29,12 @@
         "text": "传感器",
         "iconPath": "images/传感器-未选中状态.png",
         "selectedIconPath": "images/传感器-选中状态.png"
+      },
+      {
+        "pagePath": "pages/actuator/actuator",
+        "text": "执行器",
+        "iconPath": "images/执行器-未选中状态.png",
+        "selectedIconPath": "images/执行器-选中状态.png"
       }
     ]
   },
