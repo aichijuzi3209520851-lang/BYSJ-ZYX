@@ -27,6 +27,7 @@
   */
 #include "stm32f10x.h"
 #include "OLED_Font.h"
+#include "Delay.h"      /* 上电延时用DWT Delay_ms(不受编译优化影响) */
 
 /* ==================== 引脚操作宏（位拆 I2C 的两根线） ==================== */
 #define OLED_W_SCL(x)		GPIO_WriteBit(GPIOB, GPIO_Pin_8, (BitAction)(x))
@@ -346,16 +347,13 @@ static void OLED_Power_Init(void)
 
 void OLED_Init(void)
 {
-	/* volatile: 防止O2等高优化等级把空循环整体删除(实测O2下被删致上电延时归零,
-	 * SSD1306内部电源未就绪即收初始化命令 -> 整屏竖条纹花屏) */
-	volatile uint32_t i, j;
-
+	/* 上电延时必须用DWT确定性延时(Delay_Init在main最先执行, 此处必然可用):
+	 * 裸空循环延时的实际时长随编译优化等级剧烈变化——O2下循环被删成0ms,
+	 * volatile后O2快跑也只有~55ms, 均低于SSD1306规范要求的上电后>=100ms,
+	 * 内部电源未就绪即收初始化命令流 -> 整屏竖条纹花屏(真机两次实锤) */
 	OLED_Power_Init();					//先给模块上电(PB7高/PB6低), 再等内部电源就绪
 
-	for (i = 0; i < 1000; i++)			//上电延时~100ms（等待SSD1306内部电源就绪, 规范>=100ms）
-	{
-		for (j = 0; j < 1000; j++);
-	}
+	Delay_ms(150);						//确定性上电延时150ms(规范>=100ms), 不受任何优化等级影响
 
 	OLED_I2C_Init();			//I2C引脚初始化
 
