@@ -7,16 +7,30 @@ Thumbs.db
 Objects/
 Listings/
 *.uvguix.*
+*.uvoptx.bak
 *.bak
 JLinkLog.txt
+*.hex
+*.axf
+*.map
+*.lst
 
-# ===== Visual Studio (上位机/EMQX启动器) =====
+# ===== Visual Studio (上位机/EMQX 启动器) =====
 .vs/
 bin/
 obj/
 packages/
 *.user
 *.suo
+*.cache
+*.pdb
 
 # ===== 微信小程序 =====
 node_modules/
+miniprogram_npm/
+project.private.config.json
+
+# ===== 本地大件 / 归档区(不入库) =====
+_archive/
+emqx-*-windows-amd64/
+*.zip

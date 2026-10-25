@@ -1,15 +1,19 @@
 # 智能温室大棚物联网监控系统 · Smart Greenhouse IoT System
 
 ![STM32](https://img.shields.io/badge/STM32-F103C8T6-blue?style=for-the-badge&logo=stmicroelectronics&logoColor=white)
-![FreeRTOS](https://img.shields.io/badge/FreeRTOS-V10.5.1-ff6600?style=for-the-badge)
+![Bare-metal](https://img.shields.io/badge/固件-裸机分时隙主循环-2496ED?style=for-the-badge)
 ![C#](https://img.shields.io/badge/C%23-WinForms-512BD4?style=for-the-badge&logo=csharp&logoColor=white)
 ![EMQX](https://img.shields.io/badge/EMQX-5.0.26-FF6A00?style=for-the-badge&logo=eclipsemosquitto&logoColor=white)
 ![WeChat](https://img.shields.io/badge/微信小程序-Native-07C160?style=for-the-badge&logo=wechat&logoColor=white)
 ![License](https://img.shields.io/badge/License-MIT-green?style=for-the-badge)
 
-一套完整的**毕业设计级**温室大棚物联网监控系统：STM32 下位机（**FreeRTOS 实时操作系统**）采集温室环境数据，
-PC 上位机通过串口解析后经 MQTT 上云，微信小程序与远程客户端订阅数据并可下发控制指令，
+一套完整的**毕业设计级**温室大棚物联网监控系统：STM32 下位机采集温室环境数据，
+PC 上位机通过串口解析后经 MQTT 上云，微信小程序订阅数据并可下发控制指令，
 实现"**感知 — 传输 — 展示 — 控制**"全链路闭环。
+
+> **固件基线说明**：当前 `main` 分支为**裸机分时隙主循环**版本（结构简单、便于答辩演示与现场排障）。
+> 早期 FreeRTOS 四任务版本（采集/报警/通信/显示 + 队列 + 互斥锁）完整保留在固件仓的
+> [`rtos-backup`](https://github.com/aichijuzi3209520851-lang/STM32-IoT-Greenhouse/tree/rtos-backup) 分支，作为对照实现，不参与主线运行。
 
 ```
 ┌────────────────────────────────────────────┐
@@ -28,12 +32,12 @@ PC 上位机通过串口解析后经 MQTT 上云，微信小程序与远程客�
 │     PC 上位机 智能温室.exe (WinForms)      │
 │       串口解析 · 曲线展示 · 指令转发       │
 └────────────────────────────────────────────┘
-                       │  环境数据帧 Temp/Soil/Air ▲
+                       │  环境数据帧 Temp/Humi/Soil/Light/Air ▲
                        │  mode/DUOJ/MOTOR 指令 ▼
 ┌────────────────────────────────────────────┐
-│       STM32F103C8T6 · FreeRTOS V2.0        │
-│         4任务: 采集/报警/通信/显示         │
-│          DHT11 · 土壤湿度 · 烟雾           │
+│          STM32F103C8T6 · 裸机主循环        │
+│      采集 → 显示 → 打印 → 指令 → 报警      │
+│   DHT11 · 土壤湿度 · 光照 · 烟雾(MQ-2)     │
 │     OLED · LED · 蜂鸣器 · 舵机 · 电机      │
 └────────────────────────────────────────────┘
 ```
@@ -42,16 +46,16 @@ PC 上位机通过串口解析后经 MQTT 上云，微信小程序与远程客�
 
 | 目录 | 内容 | 技术栈 |
 | --- | --- | --- |
-| [`01-STM32-Firmware`](./01-STM32-Firmware) | 下位机固件：FreeRTOS 4 任务架构、数据采集、OLED 显示、声光报警、执行器联动、双串口指令毫秒级响应 | C / Keil MDK5 / 标准外设库 / FreeRTOS V10.5.1 |
+| [`01-STM32-Firmware`](./01-STM32-Firmware) | 下位机固件：裸机分时隙主循环、四路传感采集、OLED 显示、声光报警、执行器联动、双串口指令毫秒级响应 | C / Keil MDK5 / 标准外设库 |
 | [`02-PC-UpperComputer`](./02-PC-UpperComputer) | PC 上位机：串口解析、曲线图表、MQTT 发布/订阅转发、视频监控面板 | C# .NET Framework 4.7.2 / WinForms / MQTTnet |
 | [`03-EMQX-Server`](./03-EMQX-Server) | EMQX 一键启动器（MQTT.exe）与服务器部署说明 | C# .NET 10 控制台 |
-| [`04-WeChat-Miniprogram`](./04-WeChat-Miniprogram) | 微信小程序：温室主题轮播首页、数据六宫格、报警提醒、MQTT 配置与历史 | 原生小程序 / MQTT over WebSocket |
+| [`04-WeChat-Miniprogram`](./04-WeChat-Miniprogram) | 微信小程序：温室主题轮播首页、五项环境数据、执行器远程控制、报警提醒、MQTT 配置与历史 | 原生小程序 / MQTT over WebSocket |
 
 ## 核心特性
 
-- **三层架构、一份数据**：固件（1.5s/帧）→ 上位机（解析 + 发布 `green/data`）→ 小程序（订阅展示）
-- **下位机 FreeRTOS 任务化**：传感器采集 / 报警控制 / 串口通信 / OLED 显示 4 任务抢占调度，串口命令响应从轮询版最坏 1.5s 降至**毫秒级**（中断→队列直驱）；DHT11 µs 级时序以挂起调度器保护；DWT 微秒延时彻底解除 SysTick 占用（详见 [固件 RTOS 改造方案](./01-STM32-Firmware/docs/RTOS改造方案.md)）
-- **控制下行链路**：任意 MQTT 客户端向 `green/control` 发指令 → 上位机原文透传串口 → 固件执行（模式切换 / 天窗舵机 / 风扇电机）
+- **三层架构、一份数据**：固件（1.5s/帧）→ 上位机（解析 + 发布 `green/data`）→ 小程序（订阅展示 / 下发控制）
+- **下位机裸机主循环**：`while(1)` 分时隙顺序执行 采集 → OLED 刷新 → 协议帧打印 → 串口指令消费 → 报警联动，周期 = 各步耗时 + 1.5s 延时；USART1/USART3 中断收帧、主循环消费，指令响应为**毫秒级**；ISR 共享变量统一 `volatile` 声明，DHT11 µs 级时序以关中断保护
+- **控制下行链路**：任意 MQTT 客户端向 `green/control` 发指令 → 上位机原文透传串口 → 固件执行（模式切换 / 天窗舵机 / 风扇电机）；小程序「执行器」页与任意 MQTT 客户端均可下发
 - **统一报警阈值（三端一致，固件为权威判定源）**：
 
   | 指标 | 报警条件 | 联动 |
@@ -60,6 +64,7 @@ PC 上位机通过串口解析后经 MQTT 上云，微信小程序与远程客�
   | 空气湿度 | > 85 %RH | 黄灯 + 天窗开启 180° + 蜂鸣器 |
   | 土壤湿度 | > 40 %（过湿） | 蓝灯 + 蜂鸣器 |
   | 空气质量 | 烟雾判定 bad | 红灯 + 风扇全速排风 + 蜂鸣器 |
+  | 光照强度 | — | **仅采集展示，不联动**（与固件 `Light.h` 约定一致） |
 
 - **稳定的小程序 MQTT 接入**：keep-alive 60s + 30s PINGREQ 心跳 + 指数退避自动重连 + DISCONNECT 优雅退出
 - **小程序温室主题轮播首页**：4 张 Pexels 免费商用实拍图（大棚纵览/番茄/草莓/LED 垂直农场）自动轮播 + 胶囊指示点
@@ -70,8 +75,18 @@ PC 上位机通过串口解析后经 MQTT 上云，微信小程序与远程客�
 ### 串口帧（STM32 → 上位机，`\r\n` 结尾）
 
 ```
-Temp:26C   Humi:60%RH   Soil:35%(raw=1200)  Servo:OFF Motor:OFF  Air:nice
+Temp:26C   Humi:60%RH   Soil:35%(raw=1200)  Light:72%  Servo:OFF Motor:OFF  Air:nice
 ```
+
+| 字段 | 含义 | 备注 |
+| --- | --- | --- |
+| `Temp:` | 温度 °C | DHT11 |
+| `Humi:` | 空气湿度 %RH | DHT11 |
+| `Soil:` / `raw=` | 土壤湿度 % / ADC 原始值 | D2-5-2K，两点校准用 |
+| `Light:` | 光照强度 % | 光敏电阻 ADC1_IN9，仅展示 |
+| `Servo:` / `Motor:` | 天窗 / 风扇状态 | ON / OFF |
+| `Air:` | 空气质量 | nice / bad |
+| `Warning` | 行尾报警标记 | 出现即表示固件判定报警 |
 
 ### MQTT JSON（主题 `green/data`，QoS 1，Retain 关闭）
 
@@ -81,6 +96,7 @@ Temp:26C   Humi:60%RH   Soil:35%(raw=1200)  Servo:OFF Motor:OFF  Air:nice
   "temperature": 26,
   "humidity": 60,
   "soilMoisture": 35,
+  "lightPercent": 72,
   "airQuality": "nice",
   "servoStatus": "OFF",
   "motorStatus": "OFF",
@@ -140,12 +156,12 @@ Visual Studio 2019+ 打开 `02-PC-UpperComputer/DHT11.csproj`（NuGet 会自动�
 | 服务器 IP | `192.168.36.221` | `192.168.36.221` |
 | 端口 | 1883 (TCP) | 8083 (WebSocket) |
 | 数据主题 | 发布 `green/data` | 订阅 `green/data`（默认留空，手动输入） |
-| 控制主题 | 订阅 `green/control` | — |
+| 控制主题 | 订阅 `green/control` | 发布 `green/control` |
 
 ## 相关文档
 
 - [固件说明与引脚表](./01-STM32-Firmware/README.md)
-- [固件 FreeRTOS 改造方案](./01-STM32-Firmware/docs/RTOS改造方案.md)
+- [固件 FreeRTOS 版（`rtos-backup` 分支）](https://github.com/aichijuzi3209520851-lang/STM32-IoT-Greenhouse/tree/rtos-backup)
 - [上位机 MQTT 使用说明](./02-PC-UpperComputer/MQTT功能使用说明.md)
 - [EMQX 部署与一键启动器](./03-EMQX-Server/README.md)
 - [小程序说明](./04-WeChat-Miniprogram/README.md)
