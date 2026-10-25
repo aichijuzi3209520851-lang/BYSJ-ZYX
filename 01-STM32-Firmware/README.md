@@ -8,8 +8,7 @@
 > 系统总览、PC 上位机、EMQX 服务器与微信小程序请见仓库根目录 README。
 
 基于 STM32F103C8T6（ARM Cortex-M3 @72MHz）+ 标准外设库的环境监测与报警固件：
-1.5 秒周期采集 **DHT11 温湿度 / D2-5-2K 电容式土壤湿度 / 烟雾传感器**，
-| 光敏传感器 AO | PB1 | ADC1_IN9，模拟量（仅采集光照，不联动蜂鸣器） |
+1.5 秒周期采集 **DHT11 温湿度 / D2-5-2K 电容式土壤湿度 / MQ-2 烟雾传感器 / 光敏传感器光照强度**，
 OLED 实时显示，多 LED + 蜂鸣器声光报警，自动模式下报警联动**舵机（天窗）**与**电机（风扇）**；
 支持 USART1 / USART3 双串口指令手动控制，两路串口共用同一指令解析函数，行为完全一致。
 
@@ -59,10 +58,11 @@ USART1 与 USART3 收到指令后统一交给 `Parse_Command_Frame()` 解析：
 ## 串口数据输出（每 1.5s 一帧）
 
 ```
-Temp:26C   Humi:60%RH   Soil:35%(raw=1200)  Servo:OFF Motor:OFF  Air:nice
+Temp:26C   Humi:60%RH   Soil:35%(raw=1200)  Light:72%  Servo:OFF Motor:OFF  Air:nice
 ```
 
 - `Soil:` 土壤湿度百分比（`raw` 为 ADC 原始值，便于两点校准）
+- `Light:` 光照强度百分比（光敏电阻 AO → PB1/ADC1_IN9，仅采集展示，不参与报警联动）
 - 行尾出现 `Warning` 表示固件判定处于报警状态
 - PC 上位机按此格式解析并通过 MQTT 发布（详见根目录 README）
 

@@ -32,13 +32,15 @@
 
 /* ==================== 接收帧缓存与状态标志(对外导出) ====================
  * 读写关系: USARTx_IRQHandler(ISR侧)写, Process_Serial_Command(主循环)读
- * 并清标志。TODO(交接改进): 两者为跨执行流共享, 建议后续为本组变量补充
- * volatile(裸机单帧消费场景下ARMCC跨函数调用会保守重载, 实际风险低,
- * 但按ISR共享变量纪律应显式声明) */
-extern u8  USART_RX_BUF[USART_REC_LEN];  /* 串口1帧内容缓冲(不含帧尾\r\n) */
-extern u16 USART_RX_STA;                 /* 串口1接收状态机(位定义见usart.c) */
-extern u8  USART3_RX_BUF[USART_REC_LEN]; /* 串口3帧内容缓冲 */
-extern u16 USART3_RX_STA;                /* 串口3接收状态机 */
+ * 并清标志。四组变量均为跨执行流共享, 一律 volatile:
+ * 主循环每轮轮询 bit15 完成标志, 若编译器把它缓存进寄存器, 优化后
+ * (-O1/-O2)会陷入"ISR已组好帧但主循环看不见"的死等。
+ * 主循环把缓冲交给解析函数(只读拷贝)时可显式去限定:
+ *   Parse_Command_Frame((const char *)USART_RX_BUF, len); */
+extern volatile u8  USART_RX_BUF[USART_REC_LEN];  /* 串口1帧内容缓冲(不含帧尾\r\n) */
+extern volatile u16 USART_RX_STA;                 /* 串口1接收状态机(位定义见usart.c) */
+extern volatile u8  USART3_RX_BUF[USART_REC_LEN]; /* 串口3帧内容缓冲 */
+extern volatile u16 USART3_RX_STA;                /* 串口3接收状态机 */
 
 /* ==================== 初始化接口 ==================== */
 void uart_init(u32 bound);    /* USART1初始化(PA9/PA10, 9600 8N1, RXNE中断) */

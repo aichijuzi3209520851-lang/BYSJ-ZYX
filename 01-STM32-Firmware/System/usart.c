@@ -75,18 +75,20 @@ int fputc(int ch, FILE *f)
 #if EN_USART1_RX   /* 若使能串口1接收 */
 /* ==================== 串口1 帧缓存与状态机 ====================
  * 读写关系: USART1_IRQHandler(ISR)写, Process_Serial_Command(主循环)读
- * TODO(交接改进): 跨执行流共享, 建议后续补充volatile(见usart.h说明) */
-u8 USART_RX_BUF[USART_REC_LEN];     //串口1接收缓存(帧内容, 不含\r\n)
+ * 并发纪律: 四组变量均为跨执行流共享(ISR写/主循环读), 必须 volatile——
+ *          编译器不得把它们缓存在寄存器里跨轮询, 否则主循环可能永远
+ *          读不到 bit15 完成标志(优化等级相关, -O1 及以上有实际风险) */
+volatile u8 USART_RX_BUF[USART_REC_LEN];  //串口1接收缓存(帧内容, 不含\r\n)
 
 /* 接收状态标志 USART_RX_STA 位定义:
  *   bit15  : 接收完成标志(整帧就绪, 等待主循环消费)
  *   bit14  : 已收到0x0D(帧尾第一字节, 等待0x0A确认)
  *   bit13~0: 已收到的有效字节数(帧长, 最大USART_REC_LEN) */
-u16 USART_RX_STA=0;       //串口1接收状态标志
+volatile u16 USART_RX_STA=0;       //串口1接收状态标志
 
 #if EN_USART3_RX   /* 若使能串口3接收 */
-u8 USART3_RX_BUF[USART_REC_LEN];     //串口3接收缓存
-u16 USART3_RX_STA=0;       //串口3接收状态标志(位定义同串口1)
+volatile u8 USART3_RX_BUF[USART_REC_LEN];  //串口3接收缓存
+volatile u16 USART3_RX_STA=0;       //串口3接收状态标志(位定义同串口1)
 #endif
 
 /**
