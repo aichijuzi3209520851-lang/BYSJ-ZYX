@@ -44,10 +44,11 @@ STM32下位机 ──串口(9600, 8N1)──▶ PC上位机(智能温室.exe) �
 ### 串口数据帧（STM32 → 上位机，以 `\r\n` 结尾）
 
 ```
-Temp:26C   Humi:60%RH   Soil:35%(raw=1200)  Servo:OFF Motor:OFF  Air:nice
+Temp:26C   Humi:60%RH   Soil:35%(raw=1200)  Light:72%  Servo:OFF Motor:OFF  Air:nice
 ```
 
 - `Soil:` 为土壤湿度百分比（D2-5-2K 电容式，固件端已做反比映射）；`raw` 为 ADC 原始值，便于校准
+- `Light:` 为光照强度百分比（光敏电阻 ADC1_IN9，仅采集展示，不参与报警联动）
 - `Warning` 字样出现在行尾表示固件判定报警
 
 ### MQTT 发布 JSON（主题 `green/data`，QoS 1）
@@ -58,6 +59,7 @@ Temp:26C   Humi:60%RH   Soil:35%(raw=1200)  Servo:OFF Motor:OFF  Air:nice
     "temperature": 26,
     "humidity": 60,
     "soilMoisture": 35,
+    "lightPercent": 72,
     "airQuality": "nice",
     "servoStatus": "OFF",
     "motorStatus": "OFF",
@@ -67,6 +69,7 @@ Temp:26C   Humi:60%RH   Soil:35%(raw=1200)  Servo:OFF Motor:OFF  Air:nice
 ```
 
 - `soilMoisture`：土壤湿度百分比（v2.3 起由旧字段 `waterLevel` 更名，语义已从"水位"更正为"土壤湿度"）
+- `lightPercent`：光照强度百分比（0–100，来自串口 `Light:` 字段；固件未提供光照阈值，故仅作展示字段）
 - `hasAlarm`：按统一阈值计算的总报警标志，小程序据此显示报警横幅并震动提醒
 
 ### 远程控制指令（主题 `green/control` → 原文透传串口）
@@ -146,9 +149,18 @@ v2.3 已同步修正；若仍为 0 请确认上位机为最新版本、固件串
 ## 版本信息
 
 - **程序名称**：智能温室大棚监控系统（上位机）
-- **版本**：v2.3（三端协同统一版）
+- **版本**：v2.4（稳定性修复版）
 - **更新日期**：2026-10-25
-- **变更内容**：
+- **v2.4 变更内容**（按代码审查结果修复，行为对用户可见的部分）：
+  - 串口解析改为逐字段容错：`Temp:`/`Humi:` 缺失时不再整帧丢弃，土壤/光照/执行器/空气字段仍照常更新
+  - 温度正则支持负号（`Temp:-5C` 可正确解析），并兼容 `Humi:` 单位大小写
+  - 图标不再每帧 `Image.FromFile` 重新加载（改为缓存 + 统一释放），长期运行不再持续泄漏 GDI 句柄
+  - 视频流 HttpClient 改为单例复用（原每帧新建，会耗尽套接字）
+  - MQTT 消息处理器加挂载标记，断线重连后不再重复挂载导致同一条控制指令被执行多次
+  - MQTT 重连、串口读线程、视频拉流线程均补 try/catch，异常不再导致整个进程崩溃
+  - 日志框限制 6 万字符上限，长时间运行不再无限膨胀拖慢界面
+  - 窗口关闭时统一释放串口、MQTT 客户端、HttpClient、图标缓存与定时器
+- **v2.3 变更内容**：
   - 土壤湿度解析由 `Water:XX%` 同步为固件实际输出 `Soil:XX%`
   - MQTT 数据字段 `waterLevel` 更名为 `soilMoisture`
   - 报警阈值三端统一（温度>26 / 湿度>85 / 土壤>40 / 空气 bad）

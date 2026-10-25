@@ -11,9 +11,9 @@ STM32 智能温室物联网系统的**PC 端**：通过串口接收下位机环�
 
 ## 功能
 
-- **串口解析**：正则匹配 `Temp:XXC` / `Humi:XX%RH` / `Soil:XX%(raw=XX)` / `Servo` / `Motor` / `Air` / `Warning`（与固件 V1.1+ 输出协议逐字段对应）
-- **实时展示**：GDI+ 自绘温度/湿度/土壤湿度三曲线、六组状态图标（双状态随报警切换）、阈值报警日志
-- **MQTT 双向**：发布 `green/data`（QoS 1，JSON 含 `soilMoisture` 字段）；订阅 `green/control` 并原文转发串口
+- **串口解析**：正则匹配 `Temp:XXC` / `Humi:XX%RH` / `Soil:XX%(raw=XX)` / `Light:XX%` / `Servo` / `Motor` / `Air` / `Warning`（与固件 V1.2 输出协议逐字段对应，单字段异常不再丢弃整帧）
+- **实时展示**：GDI+ 自绘温度/湿度/土壤湿度/光照四曲线、六组状态图标（双状态随报警切换）、阈值报警日志
+- **MQTT 双向**：发布 `green/data`（QoS 1，JSON 含 `soilMoisture` / `lightPercent` 字段）；订阅 `green/control` 并原文转发串口
 - **设备控制**：自动/手动模式切换、天窗舵机、风扇电机按钮（对应 `mode-*` / `DUOJ-*` / `MOTOR-*` 指令）
 - **视频监控**：ESP32-CAM MJPEG `/stream` 拉流逐帧解码显示
 - **数据导出**：CSV（含时间戳与报警类型）
@@ -36,6 +36,6 @@ Visual Studio 2019+ 打开 `DHT11.csproj`（NuGet 自动还原 MQTTnet 4.3.7，�
 
 | 文件 | 说明 |
 | --- | --- |
-| `Form1.cs` | 全部 UI 与业务逻辑（串口/解析/图表/MQTT/视频流），约 2400 行 |
+| `Form1.cs` | 全部 UI 与业务逻辑（串口/解析/图表/MQTT/视频流），约 2780 行 |
 | `Program.cs` | 入口 |
 | `MQTT功能使用说明.md` | MQTT 配置与三端联调文档（v2.3） |

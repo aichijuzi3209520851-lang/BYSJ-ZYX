@@ -4,6 +4,7 @@ using System.ComponentModel;
 using System.Data;
 using System.Drawing;
 using System.Drawing.Drawing2D;
+using System.Globalization;
 using System.IO;
 using System.IO.Ports;
 using System.Linq;
@@ -31,8 +32,12 @@ namespace DHT11
         private List<string> _servoStatusHistory = new List<string>();  // 窗户状态历史
         private List<string> _motorStatusHistory = new List<string>();  // 风扇状态历史
         private const int MaxHistoryPoints = 100;
+        private const int MaxLogTextLength = 60000;   // 日志框最大字符数, 超过后砍掉前一半, 防止长时间运行后无限膨胀
+        private int _logCharCount = 0;                // 已写入日志的字符数(记账用, 避免每帧读 logTextBox.TextLength 的 O(n))
         private StringBuilder _receivedBuffer = new StringBuilder();
-        private StringBuilder _logBuffer = new StringBuilder();
+
+        // 图标缓存: 同一路径只从磁盘解码一次, 避免每帧 Image.FromFile 造成 GDI+ 句柄泄漏与 png 文件长期被锁
+        private readonly Dictionary<string, Image> _iconCache = new Dictionary<string, Image>();
 
         // UI控件
         private ComboBox comPortComboBox;
@@ -119,8 +124,7 @@ namespace DHT11
         private Color lightColor = Color.FromArgb(236, 240, 241);       // 浅灰
         private Color chartBgColor = Color.FromArgb(250, 250, 250);     // 图表背景
 
-        // 数据格式解析配置（固定使用STM32格式）
-        private string _currentDataFormat = "STM32格式";
+        // 数据格式解析配置：固件固定使用 STM32 格式 (Temp:XXC Humi:XX%RH ...), 无需运行时切换
 
         // 新增数据字段
         private int _waterLevel = 0;
@@ -128,16 +132,18 @@ namespace DHT11
         private string _servoStatus = "OFF";
         private string _motorStatus = "OFF";
         private string _airQuality = "nice";
-        private bool _hasWarning = false;
 
         // MQTT客户端和配置
         private IMqttClient _mqttClient;
         private string _mqttPublishTopic = "green/data";   // 发布主题：传感器JSON数据发送到这里(与小程序订阅主题一致)
         private string _mqttSubscribeTopic = "green/control";  // 订阅主题：接收控制命令(原文转发串口)
         private bool _mqttAutoPublish = true;               // 是否自动发布数据到MQTT
+        private bool _mqttHandlerAttached = false;          // 消息处理器是否已挂载(防止重连后重复挂载)
 
         // 视频流相关
-        private HttpClient _videoHttpClient;
+        // 修复: 原来每次点"连接"都 new HttpClient 且旧的从不释放 → 套接字/句柄泄漏。
+        //       改成整个进程共用一个实例, 断开时只取消 CancellationToken, 到关窗时才释放。
+        private readonly HttpClient _videoHttpClient = new HttpClient { Timeout = TimeSpan.FromSeconds(10) };
         private CancellationTokenSource _videoCancellationToken;
         private bool _videoStreaming = false;
 
@@ -851,25 +857,68 @@ namespace DHT11
         }
 
         // 安全加载图标
+        // 修复: 原实现每次都 Image.FromFile 返回全新 Image 且从不释放, 固件 1.5s 一帧、每帧最多换 10 个图标,
+        //       约 2.4 万张/小时, 会耗尽 GDI+ 句柄并长期锁定 png 文件。改为进程内缓存, 同一路径只解码一次。
+        //       返回的对象由缓存持有, 调用方不得 Dispose。
         private Image LoadIconSafely(string relativePath)
         {
             try
             {
                 string iconPath = Path.Combine(Application.StartupPath, relativePath);
-                if (File.Exists(iconPath))
+
+                Image cached;
+                if (_iconCache.TryGetValue(iconPath, out cached))
                 {
-                    return Image.FromFile(iconPath);
+                    return cached;
                 }
-                else
+
+                if (!File.Exists(iconPath))
                 {
                     LogMessage($"警告: 图标文件不存在: {iconPath}");
+                    _iconCache[iconPath] = null;   // 记住"不存在", 避免每帧重复查盘与刷日志
                     return null;
                 }
+
+                // 先用 FileStream 读进内存再解码, 解码后立即关闭文件句柄, 这样 png 不会被进程长期占用
+                using (var fs = new FileStream(iconPath, FileMode.Open, FileAccess.Read, FileShare.Read))
+                using (var ms = new MemoryStream())
+                {
+                    fs.CopyTo(ms);
+                    ms.Position = 0;
+                    cached = Image.FromStream(ms);
+                }
+
+                _iconCache[iconPath] = cached;
+                return cached;
             }
             catch (Exception ex)
             {
                 LogMessage($"错误: 加载图标失败 - {ex.Message}");
                 return null;
+            }
+        }
+
+        // 释放图标缓存(关闭窗体时调用)
+        private void DisposeIconCache()
+        {
+            foreach (var kv in _iconCache)
+            {
+                if (kv.Value != null)
+                {
+                    kv.Value.Dispose();
+                }
+            }
+            _iconCache.Clear();
+        }
+
+        // 设置图标; 取不到(文件缺失/已释放)时保持原样, 避免把 PictureBox 刷成空白
+        private void TrySetIcon(PictureBox box, string relativePath)
+        {
+            if (box == null) return;
+            Image icon = LoadIconSafely(relativePath);
+            if (icon != null)
+            {
+                box.Image = icon;
             }
         }
 
@@ -881,9 +930,21 @@ namespace DHT11
                 string avatarPath = Path.Combine(Application.StartupPath, "ICON\\爱吃橘子.jpg");
                 if (File.Exists(avatarPath))
                 {
-                    Image originalImage = Image.FromFile(avatarPath);
-                    Image circularImage = CreateCircularImage(originalImage, 60);
-                    avatarPictureBox.Image = circularImage;
+                    // 修复: 原实现 Image.FromFile 后既不解码副本也不释放, 头像文件被进程长期锁定。
+                    // 改为读进内存解码, 解码完成即关闭文件, 并 Dispose 掉源图。
+                    using (var fs = new FileStream(avatarPath, FileMode.Open, FileAccess.Read, FileShare.Read))
+                    using (var ms = new MemoryStream())
+                    {
+                        fs.CopyTo(ms);
+                        ms.Position = 0;
+                        using (Image originalImage = Image.FromStream(ms))
+                        {
+                            Image circularImage = CreateCircularImage(originalImage, 60);
+                            var oldImage = avatarPictureBox.Image;
+                            avatarPictureBox.Image = circularImage;
+                            oldImage?.Dispose();
+                        }
+                    }
                 }
                 else
                 {
@@ -1172,10 +1233,40 @@ namespace DHT11
             _airQualityHistory.Clear();
             _servoStatusHistory.Clear();
             _motorStatusHistory.Clear();
+
+            // 修复: 原来只清历史 list, 不清日志框 —— 按钮叫"清空"但日志一直留着且无限膨胀(UpdateLogTextBox
+            //       每次 ScrollToCaret 都是 O(n), 跑几小时会明显卡顿)。这里把日志框一并清掉并重置长度计数。
+            logTextBox.Clear();
+            _logCharCount = 0;
+
+            // 修复: 原来也不重置"最新状态", 清空后界面仍显示上一次的土壤/光照/空气质量/舵机/风扇,
+            //       图标还停在报警状态。统一复位到初始值, 让界面与"无数据"一致。
+            _waterLevel = 0;
+            _lightLevel = 0;
+            _airQuality = "nice";
+            _servoStatus = "OFF";
+            _motorStatus = "OFF";
+            _tempAlarm = false;
+            _humAlarm = false;
+
             tempLabel.Text = "--.-";
             humLabel.Text = "--.-";
             waterLabel.Text = "--";
             lightLabel.Text = "--";
+            airQualityLabel.Text = "nice";
+            airQualityLabel.ForeColor = successColor;
+            servoLabel.Text = "关闭";
+            motorLabel.Text = "关闭";
+
+            // 图标全部复位到正常态(直接取缓存, 已解码过的不会重复读盘)
+            TrySetIcon(tempIconPictureBox, "ICON\\温度.png");
+            TrySetIcon(humIconPictureBox, "ICON\\湿度.png");
+            TrySetIcon(waterIconPictureBox, "ICON\\水位.png");
+            TrySetIcon(airQualityIconPictureBox, "ICON\\空气质量优状态.png");
+            TrySetIcon(windowIconPictureBox, "ICON\\窗户-关状态.png");
+            TrySetIcon(fanIconPictureBox, "ICON\\风扇-关状态.png");
+            TrySetIcon(buzzerIconPictureBox, "ICON\\蜂鸣器-关状态.png");
+
             chartPanel.Invalidate();
             LogMessage("已清空历史数据");
         }
@@ -1213,7 +1304,12 @@ namespace DHT11
                                 double waterLevel = i < _waterHistory.Count ? _waterHistory[i] : 0;
                                 double lightLevel = i < _lightHistory.Count ? _lightHistory[i] : 0;
 
-                                sw.WriteLine($"{i + 1},{_tempHistory[i]:F1},{_humHistory[i]:F1},{waterLevel:F0},{lightLevel:F0},{airQuality},{servoStatus},{motorStatus},{alarmType},{timestamp}");
+                                // 修复: 原来直接用 {x:F1} 插值, 受区域设置影响(德语区会写成 25,5, 把 CSV 列拆坏)。
+                                //       导出格式统一钉死为 InvariantCulture。
+                                sw.WriteLine(string.Format(CultureInfo.InvariantCulture,
+                                    "{0},{1:F1},{2:F1},{3:F0},{4:F0},{5},{6},{7},{8},{9}",
+                                    i + 1, _tempHistory[i], _humHistory[i], waterLevel, lightLevel,
+                                    airQuality, servoStatus, motorStatus, alarmType, timestamp));
                             }
                         }
                         LogMessage($"数据已导出到: {sfd.FileName}");
@@ -1276,116 +1372,131 @@ namespace DHT11
             try
             {
                 // 记录原始数据
-                this.Invoke((MethodInvoker)delegate
-                {
-                    LogMessage($"接收: {line}");
-                });
+                SafeInvoke(() => LogMessage($"接收: {line}"));
 
                 // 解析数据
                 var parsed = ParseData(line);
-                if (parsed.HasValue)
+                if (!parsed.HasValue)
                 {
-                    var p = parsed.Value;
-                    string timestamp = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss");
-                    this.Invoke((MethodInvoker)delegate
-                    {
-                        tempLabel.Text = $"{p.Temp:F1}";
-                        humLabel.Text = $"{p.Hum:F1}";
-                        waterLabel.Text = $"{_waterLevel}";
-                        lightLabel.Text = $"{_lightLevel}";
-                        airQualityLabel.Text = $"{_airQuality}";
-                        servoLabel.Text = _servoStatus == "ON" ? "开启" : "关闭";
-                        motorLabel.Text = _motorStatus == "ON" ? "开启" : "关闭";
-
-                        // 更新空气质量图标和颜色
-                        if (_airQuality == "bad")
-                        {
-                            airQualityIconPictureBox.Image = LoadIconSafely("ICON\\空气质量劣状态.png");
-                            airQualityLabel.ForeColor = dangerColor;
-                        }
-                        else
-                        {
-                            airQualityIconPictureBox.Image = LoadIconSafely("ICON\\空气质量优状态.png");
-                            airQualityLabel.ForeColor = successColor;
-                        }
-
-                        // 更新土壤湿度图标(统一阈值: >40%过湿报警)
-                        if (_waterLevel > _soilMax)
-                        {
-                            waterIconPictureBox.Image = LoadIconSafely("ICON\\水位_报警状态.png");
-                        }
-                        else
-                        {
-                            waterIconPictureBox.Image = LoadIconSafely("ICON\\水位.png");
-                        }
-
-                        // 更新窗户图标
-                        if (_servoStatus == "ON")
-                        {
-                            windowIconPictureBox.Image = LoadIconSafely("ICON\\窗户-开状态.png");
-                        }
-                        else
-                        {
-                            windowIconPictureBox.Image = LoadIconSafely("ICON\\窗户-关状态.png");
-                        }
-
-                        // 更新风扇图标
-                        if (_motorStatus == "ON")
-                        {
-                            fanIconPictureBox.Image = LoadIconSafely("ICON\\风扇-开状态.png");
-                        }
-                        else
-                        {
-                            fanIconPictureBox.Image = LoadIconSafely("ICON\\风扇-关状态.png");
-                        }
-
-                        // 更新蜂鸣器图标（根据报警状态）
-                        bool hasAlarm = (p.Temp > _tempMax) ||
-                                       (p.Hum > _humMax) ||
-                                       (_waterLevel > _soilMax) ||
-                                       (_airQuality == "bad");
-                        if (hasAlarm)
-                        {
-                            buzzerIconPictureBox.Image = LoadIconSafely("ICON\\蜂鸣器-开状态.png");
-                        }
-                        else
-                        {
-                            buzzerIconPictureBox.Image = LoadIconSafely("ICON\\蜂鸣器-关状态.png");
-                        }
-
-                        // 获取报警类型
-                        string alarmType = GetAlarmType(p.Temp, p.Hum);
-
-                        // 添加到图表，包含时间戳和报警类型
-                        AddToChart(p.Temp, p.Hum, _waterLevel, timestamp, alarmType);
-                        chartPanel.Invalidate();
-                        LogMessage($"解析成功: 温度={p.Temp:F1}°C, 湿度={p.Hum:F1}%, 土壤湿度={_waterLevel}%, 光照={_lightLevel}%", Color.Green);
-
-                        // 检查报警状态
-                        UpdateAlarmStatus(p.Temp, p.Hum);
-
-                        // 发布数据到MQTT
-                        PublishDataToMqtt(p.Temp, p.Hum);
-                    });
+                    SafeInvoke(() => LogMessage($"解析失败: 数据格式不正确", Color.Red));
+                    return;
                 }
-                else
+
+                var p = parsed.Value;
+                string timestamp = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss");
+
+                SafeInvoke(delegate
                 {
-                    this.Invoke((MethodInvoker)delegate
+                    // 温湿度可能缺失(DHT11 读失败), 此时其余字段照常刷新, 不再整帧丢弃
+                    if (p.HasTempHum)
                     {
-                        LogMessage($"解析失败: 数据格式不正确", Color.Red);
-                    });
-                }
+                        tempLabel.Text = p.Temp.ToString("F1", CultureInfo.InvariantCulture);
+                        humLabel.Text = p.Hum.ToString("F1", CultureInfo.InvariantCulture);
+                    }
+
+                    waterLabel.Text = _waterLevel.ToString(CultureInfo.InvariantCulture);
+                    lightLabel.Text = _lightLevel.ToString(CultureInfo.InvariantCulture);
+                    airQualityLabel.Text = _airQuality;
+                    servoLabel.Text = _servoStatus == "ON" ? "开启" : "关闭";
+                    motorLabel.Text = _motorStatus == "ON" ? "开启" : "关闭";
+
+                    // 更新空气质量图标和颜色
+                    if (_airQuality == "bad")
+                    {
+                        airQualityIconPictureBox.Image = LoadIconSafely("ICON\\空气质量劣状态.png");
+                        airQualityLabel.ForeColor = dangerColor;
+                    }
+                    else
+                    {
+                        airQualityIconPictureBox.Image = LoadIconSafely("ICON\\空气质量优状态.png");
+                        airQualityLabel.ForeColor = successColor;
+                    }
+
+                    // 更新土壤湿度图标(统一阈值: >40%过湿报警)
+                    if (_waterLevel > _soilMax)
+                    {
+                        waterIconPictureBox.Image = LoadIconSafely("ICON\\水位_报警状态.png");
+                    }
+                    else
+                    {
+                        waterIconPictureBox.Image = LoadIconSafely("ICON\\水位.png");
+                    }
+
+                    // 更新窗户图标
+                    if (_servoStatus == "ON")
+                    {
+                        windowIconPictureBox.Image = LoadIconSafely("ICON\\窗户-开状态.png");
+                    }
+                    else
+                    {
+                        windowIconPictureBox.Image = LoadIconSafely("ICON\\窗户-关状态.png");
+                    }
+
+                    // 更新风扇图标
+                    if (_motorStatus == "ON")
+                    {
+                        fanIconPictureBox.Image = LoadIconSafely("ICON\\风扇-开状态.png");
+                    }
+                    else
+                    {
+                        fanIconPictureBox.Image = LoadIconSafely("ICON\\风扇-关状态.png");
+                    }
+
+                    // 更新蜂鸣器图标（根据报警状态）
+                    bool hasAlarm = (p.HasTempHum && p.Temp > _tempMax) ||
+                                   (p.HasTempHum && p.Hum > _humMax) ||
+                                   (_waterLevel > _soilMax) ||
+                                   (_airQuality == "bad");
+                    if (hasAlarm)
+                    {
+                        buzzerIconPictureBox.Image = LoadIconSafely("ICON\\蜂鸣器-开状态.png");
+                    }
+                    else
+                    {
+                        buzzerIconPictureBox.Image = LoadIconSafely("ICON\\蜂鸣器-关状态.png");
+                    }
+
+                    if (!p.HasTempHum)
+                    {
+                        LogMessage($"DHT11 无温湿度数据, 已跳过温度/湿度/图表更新(土壤={_waterLevel}%, 光照={_lightLevel}%)", warningColor);
+                        return;
+                    }
+
+                    // 获取报警类型
+                    string alarmType = GetAlarmType(p.Temp, p.Hum);
+
+                    // 添加到图表，包含时间戳和报警类型
+                    AddToChart(p.Temp, p.Hum, _waterLevel, timestamp, alarmType);
+                    chartPanel.Invalidate();
+                    LogMessage($"解析成功: 温度={p.Temp:F1}°C, 湿度={p.Hum:F1}%, 土壤湿度={_waterLevel}%, 光照={_lightLevel}%", Color.Green);
+
+                    // 检查报警状态
+                    UpdateAlarmStatus(p.Temp, p.Hum);
+
+                    // 发布数据到MQTT
+                    PublishDataToMqtt(p.Temp, p.Hum);
+                });
             }
             catch (Exception ex)
             {
-                this.Invoke((MethodInvoker)delegate
-                {
-                    LogMessage($"处理数据异常: {ex.Message}", Color.Red);
-                });
+                // 修复: 原 catch 里再次 this.Invoke, 关窗瞬间会二次抛 ObjectDisposedException 并逃逸到线程池导致进程终止。
+                //       改成 SafeInvoke(内部吞掉 ObjectDisposedException/InvalidOperationException) + 兜底 catch。
+                SafeInvoke(() => LogMessage($"处理数据异常: {ex.Message}", Color.Red));
             }
         }
 
-        private (double Temp, double Hum)? ParseData(string raw)
+        /// <summary>
+        /// 一帧解析结果。温湿度可能缺失(固件 DHT11 读取失败时只打印 DHT11 Read Failed!，
+        /// 但 Soil/Light/Servo/Motor/Air 仍会正常输出)，此时 HasTempHum=false，其余字段照常可用。
+        /// </summary>
+        private struct FrameData
+        {
+            public bool HasTempHum;
+            public double Temp;
+            public double Hum;
+        }
+
+        private FrameData? ParseData(string raw)
         {
             try
             {
@@ -1393,23 +1504,35 @@ namespace DHT11
                 if (string.IsNullOrEmpty(s)) return null;
 
                 // 固定使用STM32格式解析: Temp:XXC   Humi:XX%RH
-                var tempMatch = Regex.Match(s, @"Temp:(\d+)C");
-                var humMatch = Regex.Match(s, @"Humi:(\d+)%RH");
+                // 修复: 原正则 Temp:(\d+)C 吃不到负号, 固件 printf("Temp:%dC") 在零下会输出 Temp:-5C,
+                //       导致整帧被判"格式不正确"(连 Humi 一起白解析)。改为允许可选的负号与小数。
+                var tempMatch = Regex.Match(s, @"Temp:(-?\d+(?:\.\d+)?)C");
+                var humMatch = Regex.Match(s, @"Humi:(\d+(?:\.\d+)?)%RH");
 
-                if (!tempMatch.Success || !humMatch.Success) return null;
-                if (tempMatch.Groups.Count < 2 || humMatch.Groups.Count < 2) return null;
+                double temp = 0, hum = 0;
+                bool hasTempHum = false;
 
-                if (!double.TryParse(tempMatch.Groups[1].Value, out double temp)) return null;
-                if (!double.TryParse(humMatch.Groups[1].Value, out double hum)) return null;
+                if (tempMatch.Success && humMatch.Success
+                    && double.TryParse(tempMatch.Groups[1].Value, NumberStyles.Float, CultureInfo.InvariantCulture, out temp)
+                    && double.TryParse(humMatch.Groups[1].Value, NumberStyles.Float, CultureInfo.InvariantCulture, out hum))
+                {
+                    // 合理性检查放在写状态之前
+                    // 修复: 原实现先 ParseSTM32ExtendedData 写全局字段、后做范围检查,
+                    //       非法帧虽然返回 null, 但 _waterLevel/_servoStatus 等已经被污染了。
+                    if (temp >= -50 && temp <= 100 && hum >= 0 && hum <= 100)
+                    {
+                        hasTempHum = true;
+                    }
+                }
 
-                // 解析STM32扩展数据
-                ParseSTM32ExtendedData(s);
+                // 扩展数据(土壤/光照/舵机/电机/空气)在这帧里是否存在, 与温湿度是否有效相互独立
+                bool hasExtended = ParseSTM32ExtendedData(s);
 
-                // 合理性检查
-                if (temp < -50 || temp > 100) return null;
-                if (hum < 0 || hum > 100) return null;
+                // 温湿度无效且没有任何扩展字段 → 这行根本不是数据帧(比如启动横幅)
+                if (!hasTempHum && !hasExtended) return null;
 
-                return (temp, hum);
+                var frame = new FrameData { HasTempHum = hasTempHum, Temp = temp, Hum = hum };
+                return frame;
             }
             catch (Exception ex)
             {
@@ -1419,22 +1542,35 @@ namespace DHT11
         }
 
         // 解析STM32扩展数据
-        private void ParseSTM32ExtendedData(string data)
+        /// <summary>
+        /// 解析固件帧里的扩展字段。返回 true 表示这行里至少出现了一个扩展字段。
+        /// 修复: 原实现返回 void 且用 int.Parse, 一旦字段异常就整帧丢弃; 现改为 TryParse, 单个字段坏掉不影响其它字段。
+        /// </summary>
+        private bool ParseSTM32ExtendedData(string data)
         {
+            bool parsedAny = false;
             try
             {
                 // 解析土壤湿度: Soil:XX%(STM32固件输出格式, raw值用于校准)
                 var waterMatch = Regex.Match(data, @"Soil:(\d+)%");
                 if (waterMatch.Success)
                 {
-                    _waterLevel = int.Parse(waterMatch.Groups[1].Value);
+                    if (int.TryParse(waterMatch.Groups[1].Value, NumberStyles.Integer, CultureInfo.InvariantCulture, out int water))
+                    {
+                        _waterLevel = water;
+                    }
+                    parsedAny = true;
                 }
 
                 // 解析光照强度: Light:XX%(固件 Light_GetPercent 输出)
                 var lightMatch = Regex.Match(data, @"Light:(\d+)%");
                 if (lightMatch.Success)
                 {
-                    _lightLevel = int.Parse(lightMatch.Groups[1].Value);
+                    if (int.TryParse(lightMatch.Groups[1].Value, NumberStyles.Integer, CultureInfo.InvariantCulture, out int light))
+                    {
+                        _lightLevel = light;
+                    }
+                    parsedAny = true;
                 }
 
                 // 解析舵机状态: Servo:ON/OFF
@@ -1442,6 +1578,7 @@ namespace DHT11
                 if (servoMatch.Success)
                 {
                     _servoStatus = servoMatch.Groups[1].Value;
+                    parsedAny = true;
                 }
 
                 // 解析电机状态: Motor:ON/OFF
@@ -1449,6 +1586,7 @@ namespace DHT11
                 if (motorMatch.Success)
                 {
                     _motorStatus = motorMatch.Groups[1].Value;
+                    parsedAny = true;
                 }
 
                 // 解析空气质量: Air:nice/bad
@@ -1456,15 +1594,14 @@ namespace DHT11
                 if (airMatch.Success)
                 {
                     _airQuality = airMatch.Groups[1].Value;
+                    parsedAny = true;
                 }
-
-                // 检查是否有Warning
-                _hasWarning = data.Contains("Warning");
             }
             catch (Exception ex)
             {
                 System.Diagnostics.Debug.WriteLine($"ParseSTM32ExtendedData异常: {ex.Message}");
             }
+            return parsedAny;
         }
 
         private void AddToChart(double temp, double hum, double water, string timestamp, string alarmType)
@@ -1492,6 +1629,31 @@ namespace DHT11
             }
         }
 
+        /// <summary>
+        /// 安全地把动作投递到 UI 线程。
+        /// 修复: 原代码在后台线程里裸调 this.Invoke, 关窗瞬间句柄已销毁会抛 ObjectDisposedException,
+        ///       而 catch 块里再 Invoke 一次会二次抛出, 异常逃出 SerialPort.DataReceived 落到线程池 →
+        ///       .NET Framework 直接终止进程。所有跨线程 UI 更新统一走这里。
+        /// </summary>
+        private bool SafeInvoke(Action action)
+        {
+            try
+            {
+                if (IsDisposed || Disposing || !IsHandleCreated) return false;
+                if (InvokeRequired)
+                {
+                    Invoke((MethodInvoker)delegate { action(); });
+                }
+                else
+                {
+                    action();
+                }
+                return true;
+            }
+            catch (ObjectDisposedException) { return false; }
+            catch (InvalidOperationException) { return false; }
+        }
+
         private void LogMessage(string message, Color? color = null)
         {
             try
@@ -1499,25 +1661,7 @@ namespace DHT11
                 string timestamp = DateTime.Now.ToString("HH:mm:ss.fff");
                 string logEntry = $"[{timestamp}] {message}\r\n";
 
-                _logBuffer.Append(logEntry);
-
-                // 限制日志缓冲区大小
-                if (_logBuffer.Length > 50000)
-                {
-                    _logBuffer.Remove(0, 10000);
-                }
-
-                if (logTextBox.InvokeRequired)
-                {
-                    logTextBox.Invoke((MethodInvoker)delegate
-                    {
-                        UpdateLogTextBox(logEntry);
-                    });
-                }
-                else
-                {
-                    UpdateLogTextBox(logEntry);
-                }
+                SafeInvoke(() => UpdateLogTextBox(logEntry));
             }
             catch { }
         }
@@ -1525,9 +1669,25 @@ namespace DHT11
         private void UpdateLogTextBox(string logEntry)
         {
             logTextBox.AppendText(logEntry);
+            _logCharCount += logEntry.Length;
+
+            // 修复: 原实现只追加不回收, 4 行/秒 → 每小时 1MB+, AppendText/ScrollToCaret 都是 O(n), 跑半天界面明显卡。
+            //       超过上限时砍掉前半部分, 只保留最近的 MaxLogTextLength/2 个字符。
+            //       用 _logCharCount 记账而不是每帧读 logTextBox.TextLength (后者要跨进程取长度, 且日志长了会拖慢整体刷新)。
+            if (_logCharCount > MaxLogTextLength)
+            {
+                int keepLength = MaxLogTextLength / 2;
+                string current = logTextBox.Text;
+                int cut = current.Length > keepLength ? current.Length - keepLength : 0;
+                logTextBox.Text = current.Substring(cut);
+                _logCharCount = logTextBox.TextLength;
+                logTextBox.SelectionStart = logTextBox.TextLength;
+                logTextBox.SelectionLength = 0;
+            }
+
             if (autoScrollCheckBox.Checked)
             {
-                logTextBox.SelectionStart = logTextBox.Text.Length;
+                logTextBox.SelectionStart = logTextBox.TextLength;
                 logTextBox.ScrollToCaret();
             }
         }
@@ -1585,11 +1745,17 @@ namespace DHT11
 
             // 绘制标题
             using (var titleFont = new Font("微软雅黑", 11F, FontStyle.Bold))
+            using (var titleBrush = new SolidBrush(darkColor))
             {
                 string title = $"数据点数: {_tempHistory.Count}/{MaxHistoryPoints}";
-                g.DrawString(title, titleFont, new SolidBrush(darkColor), left, top - 25);
+                g.DrawString(title, titleFont, titleBrush, left, top - 25);
             }
         }
+
+        // 水平网格分段数。温度轴与湿度轴都用这个值, 保证三者的刻度线重合。
+        private const int ChartHSteps = 10;
+        // 垂直网格分段数
+        private const int ChartVSteps = 10;
 
         private void DrawGrid(Graphics g, int left, int top, int right, int bottom)
         {
@@ -1598,7 +1764,9 @@ namespace DHT11
                 gridPen.DashStyle = DashStyle.Dot;
 
                 // 水平网格线
-                int hSteps = 8;
+                // 修复: 原来 hSteps=8, 而 DrawHumidityYAxis 用 steps=10 → 右侧 0/10/…/100 的刻度全落在网格线之间。
+                //       统一为 ChartHSteps=10: 温度 0/4/…/40、湿度 0/10/…/100 都正好落在网格线上。
+                int hSteps = ChartHSteps;
                 for (int i = 0; i <= hSteps; i++)
                 {
                     int y = top + (bottom - top) * i / hSteps;
@@ -1606,7 +1774,7 @@ namespace DHT11
                 }
 
                 // 垂直网格线
-                int vSteps = 10;
+                int vSteps = ChartVSteps;
                 for (int i = 0; i <= vSteps; i++)
                 {
                     int x = left + (right - left) * i / vSteps;
@@ -1619,18 +1787,19 @@ namespace DHT11
         {
             using (var font = new Font("Arial", 9F))
             using (var brush = new SolidBrush(dangerColor))
+            using (var tickPen = new Pen(darkColor, 1))   // 修复: 原来在循环里 9 次 new Pen 且从不释放
             {
-                int steps = 8;
+                int steps = ChartHSteps;
                 for (int i = 0; i <= steps; i++)
                 {
                     int y = bottom - (bottom - top) * i / steps;
                     double value = 40.0 * i / steps;  // 0-40度
 
                     // 刻度线
-                    g.DrawLine(new Pen(darkColor, 1), x - 5, y, x, y);
+                    g.DrawLine(tickPen, x - 5, y, x, y);
 
                     // 刻度值
-                    string label = value.ToString("F0");
+                    string label = value.ToString("F0", CultureInfo.InvariantCulture);
                     SizeF size = g.MeasureString(label, font);
                     g.DrawString(label, font, brush, x - size.Width - 10, y - size.Height / 2);
                 }
@@ -1649,18 +1818,19 @@ namespace DHT11
         {
             using (var font = new Font("Arial", 9F))
             using (var brush = new SolidBrush(primaryColor))
+            using (var tickPen = new Pen(darkColor, 1))   // 修复: 原来在循环里 11 次 new Pen 且从不释放
             {
-                int steps = 10;
+                int steps = ChartHSteps;
                 for (int i = 0; i <= steps; i++)
                 {
                     int y = bottom - (bottom - top) * i / steps;
                     double value = 100.0 * i / steps;  // 0-100%
 
                     // 刻度线
-                    g.DrawLine(new Pen(darkColor, 1), x, y, x + 5, y);
+                    g.DrawLine(tickPen, x, y, x + 5, y);
 
                     // 刻度值
-                    string label = value.ToString("F0");
+                    string label = value.ToString("F0", CultureInfo.InvariantCulture);
                     g.DrawString(label, font, brush, x + 10, y - font.Height / 2);
                 }
 
@@ -1696,6 +1866,7 @@ namespace DHT11
 
             using (var pen = new Pen(dangerColor, 3))
             using (var shadowPen = new Pen(Color.FromArgb(50, dangerColor), 5))
+            using (var pointBrush = new SolidBrush(dangerColor))   // 修复: 原来循环内每点 new SolidBrush 从不释放
             {
                 pen.LineJoin = LineJoin.Round;
 
@@ -1720,7 +1891,7 @@ namespace DHT11
                     }
 
                     // 绘制数据点
-                    g.FillEllipse(new SolidBrush(dangerColor), x - 3, y - 3, 6, 6);
+                    g.FillEllipse(pointBrush, x - 3, y - 3, 6, 6);
 
                     prev = cur;
                 }
@@ -1738,6 +1909,7 @@ namespace DHT11
 
             using (var pen = new Pen(primaryColor, 3))
             using (var shadowPen = new Pen(Color.FromArgb(50, primaryColor), 5))
+            using (var pointBrush = new SolidBrush(primaryColor))   // 修复: 原来循环内每点 new SolidBrush 从不释放
             {
                 pen.LineJoin = LineJoin.Round;
 
@@ -1762,7 +1934,7 @@ namespace DHT11
                     }
 
                     // 绘制数据点
-                    g.FillEllipse(new SolidBrush(primaryColor), x - 3, y - 3, 6, 6);
+                    g.FillEllipse(pointBrush, x - 3, y - 3, 6, 6);
 
                     prev = cur;
                 }
@@ -1781,6 +1953,7 @@ namespace DHT11
             Color waterColor = Color.FromArgb(255, 193, 7);  // 黄色
             using (var pen = new Pen(waterColor, 3))
             using (var shadowPen = new Pen(Color.FromArgb(50, waterColor), 5))
+            using (var pointBrush = new SolidBrush(waterColor))   // 修复: 原来循环内每点 new SolidBrush 从不释放
             {
                 pen.LineJoin = LineJoin.Round;
 
@@ -1805,7 +1978,7 @@ namespace DHT11
                     }
 
                     // 绘制数据点
-                    g.FillEllipse(new SolidBrush(waterColor), x - 3, y - 3, 6, 6);
+                    g.FillEllipse(pointBrush, x - 3, y - 3, 6, 6);
 
                     prev = cur;
                 }
@@ -1824,6 +1997,7 @@ namespace DHT11
             Color lightColor = Color.FromArgb(255, 152, 0);  // 橙色(与土壤湿度黄色区分)
             using (var pen = new Pen(lightColor, 3))
             using (var shadowPen = new Pen(Color.FromArgb(50, lightColor), 5))
+            using (var pointBrush = new SolidBrush(lightColor))   // 修复: 原来循环内每点 new SolidBrush 从不释放
             {
                 pen.LineJoin = LineJoin.Round;
 
@@ -1848,7 +2022,7 @@ namespace DHT11
                     }
 
                     // 绘制数据点
-                    g.FillEllipse(new SolidBrush(lightColor), x - 3, y - 3, 6, 6);
+                    g.FillEllipse(pointBrush, x - 3, y - 3, 6, 6);
 
                     prev = cur;
                 }
@@ -1857,29 +2031,40 @@ namespace DHT11
 
         private void DrawLegend(Graphics g, int x, int y)
         {
+            // 修复: 原来 4 组图例各自 new Pen + new SolidBrush 且全部不释放(每次重绘漏 8 个 GDI 句柄),
+            //       改成按颜色复用 4 个 Pen + 4 个 Brush, 统一 using 释放。
+            Color waterColor = Color.FromArgb(255, 193, 7);
+            Color lightColor = Color.FromArgb(255, 152, 0);
+
             using (var font = new Font("微软雅黑", 9F))
+            using (var tempPen = new Pen(dangerColor, 3))
+            using (var humPen = new Pen(primaryColor, 3))
+            using (var waterPen = new Pen(waterColor, 3))
+            using (var lightPen = new Pen(lightColor, 3))
+            using (var tempBrush = new SolidBrush(dangerColor))
+            using (var humBrush = new SolidBrush(primaryColor))
+            using (var waterBrush = new SolidBrush(waterColor))
+            using (var lightBrush = new SolidBrush(lightColor))
             {
                 // 温度图例
-                g.DrawLine(new Pen(dangerColor, 3), x, y + 5, x + 30, y + 5);
-                g.FillEllipse(new SolidBrush(dangerColor), x + 12, y + 2, 6, 6);
-                g.DrawString("温度", font, new SolidBrush(dangerColor), x + 35, y);
+                g.DrawLine(tempPen, x, y + 5, x + 30, y + 5);
+                g.FillEllipse(tempBrush, x + 12, y + 2, 6, 6);
+                g.DrawString("温度", font, tempBrush, x + 35, y);
 
                 // 湿度图例
-                g.DrawLine(new Pen(primaryColor, 3), x, y + 25, x + 30, y + 25);
-                g.FillEllipse(new SolidBrush(primaryColor), x + 12, y + 22, 6, 6);
-                g.DrawString("湿度", font, new SolidBrush(primaryColor), x + 35, y + 20);
+                g.DrawLine(humPen, x, y + 25, x + 30, y + 25);
+                g.FillEllipse(humBrush, x + 12, y + 22, 6, 6);
+                g.DrawString("湿度", font, humBrush, x + 35, y + 20);
 
                 // 土壤湿度图例
-                Color waterColor = Color.FromArgb(255, 193, 7);
-                g.DrawLine(new Pen(waterColor, 3), x, y + 45, x + 30, y + 45);
-                g.FillEllipse(new SolidBrush(waterColor), x + 12, y + 42, 6, 6);
-                g.DrawString("土壤湿度", font, new SolidBrush(waterColor), x + 35, y + 40);
+                g.DrawLine(waterPen, x, y + 45, x + 30, y + 45);
+                g.FillEllipse(waterBrush, x + 12, y + 42, 6, 6);
+                g.DrawString("土壤湿度", font, waterBrush, x + 35, y + 40);
 
                 // 光照图例
-                Color lightColor = Color.FromArgb(255, 152, 0);
-                g.DrawLine(new Pen(lightColor, 3), x, y + 65, x + 30, y + 65);
-                g.FillEllipse(new SolidBrush(lightColor), x + 12, y + 62, 6, 6);
-                g.DrawString("光照", font, new SolidBrush(lightColor), x + 35, y + 60);
+                g.DrawLine(lightPen, x, y + 65, x + 30, y + 65);
+                g.FillEllipse(lightBrush, x + 12, y + 62, 6, 6);
+                g.DrawString("光照", font, lightBrush, x + 35, y + 60);
             }
         }
 
@@ -1896,14 +2081,41 @@ namespace DHT11
                 }
 
                 // 断开MQTT
-                if (_mqttClient != null && _mqttClient.IsConnected)
+                // 修复: 原来在 UI 线程上 _mqttClient.DisconnectAsync().Wait(1000) 同步等异步,
+                //       最轻是每次关窗固定僵 1 秒, 最重是 SynchronizationContext 捕获导致死锁。
+                //       改为把断开动作丢到线程池执行, UI 线程只用 Task.WhenAny 做有超时的等待,
+                //       超时后照样继续关窗(不再无限期阻塞), 最后无论成功与否都释放客户端。
+                if (_mqttClient != null)
                 {
-                    _mqttClient.DisconnectAsync().Wait(1000);
+                    try
+                    {
+                        var disconnectTask = Task.Run(async () =>
+                        {
+                            if (_mqttClient.IsConnected)
+                            {
+                                await _mqttClient.DisconnectAsync();
+                            }
+                        });
+
+                        if (!disconnectTask.Wait(1500))
+                        {
+                            System.Diagnostics.Debug.WriteLine("MQTT 断开超时, 继续关闭窗口");
+                        }
+                    }
+                    catch { }
+                    finally
+                    {
+                        try { _mqttClient.Dispose(); } catch { }
+                    }
                 }
 
-                // 断开视频流
-                _videoCancellationToken?.Cancel();
-                _videoHttpClient?.Dispose();
+                // 断开视频流(共用 HttpClient 在这里统一释放)
+                try { _videoCancellationToken?.Cancel(); } catch { }
+                try { _videoCancellationToken?.Dispose(); } catch { }
+                try { _videoHttpClient.Dispose(); } catch { }
+
+                // 释放图标缓存(必须在窗体销毁前, 且此时不再有后台线程取用)
+                DisposeIconCache();
             }
             catch { }
         }
@@ -1964,12 +2176,60 @@ namespace DHT11
             {
                 var factory = new MqttFactory();
                 _mqttClient = factory.CreateMqttClient();
+
+                // 修复: 处理器在这里挂载一次即可, 客户端对象全生命周期只有这一个,
+                //       不能放在 SubscribeToTopic 里(每重连一次就多挂一份, 命令会被重复转发到串口)。
+                AttachMqttMessageHandler();
+
                 LogMessage("MQTT客户端已初始化");
             }
             catch (Exception ex)
             {
                 LogMessage($"MQTT客户端初始化失败: {ex.Message}", Color.Red);
             }
+        }
+
+        /// <summary>
+        /// 解析 MQTT Broker 地址。支持 host / host:port / mqtt://host:port 三种写法, 端口非法时返回 false。
+        /// </summary>
+        private static bool TryParseBrokerAddress(string text, out string server, out int port)
+        {
+            server = null;
+            port = 1883;
+
+            if (string.IsNullOrWhiteSpace(text)) return false;
+
+            string s = text.Trim();
+
+            // 容忍带 scheme 的写法 (mqtt:// / tcp://)
+            int schemeIndex = s.IndexOf("://", StringComparison.Ordinal);
+            if (schemeIndex >= 0)
+            {
+                s = s.Substring(schemeIndex + 3);
+            }
+
+            // 去掉可能存在的路径部分
+            int slashIndex = s.IndexOf('/');
+            if (slashIndex >= 0)
+            {
+                s = s.Substring(0, slashIndex);
+            }
+
+            if (s.Length == 0) return false;
+
+            string[] parts = s.Split(':');
+            if (parts.Length > 2) return false;   // IPv6 未做支持, 明确拒绝而不是静默截断
+
+            server = parts[0].Trim();
+            if (server.Length == 0) return false;
+
+            if (parts.Length == 2)
+            {
+                if (!int.TryParse(parts[1].Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out port)) return false;
+                if (port <= 0 || port > 65535) return false;
+            }
+
+            return true;
         }
 
         // MQTT连接按钮点击事件
@@ -1990,9 +2250,17 @@ namespace DHT11
                 }
 
                 // 解析服务器地址和端口
-                string[] parts = mqttBrokerTextBox.Text.Split(':');
-                string server = parts[0];
-                int port = parts.Length > 1 ? int.Parse(parts[1]) : 1883;
+                // 修复: 原来裸用 int.Parse, 填 "192.168.1.5:abc" 会抛 FormatException;
+                //       且 Split(':') 不支持 mqtt://host:1883 这类带 scheme 的写法。改用 TryParse 给出明确提示。
+                string brokerText = mqttBrokerTextBox.Text.Trim();
+                string server;
+                int port;
+
+                if (!TryParseBrokerAddress(brokerText, out server, out port))
+                {
+                    MessageBox.Show("MQTT服务器地址格式不正确, 正确示例: 192.168.1.5:1883", "提示", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                    return;
+                }
 
                 // 读取发布主题和订阅主题
                 _mqttPublishTopic = mqttTopicTextBox.Text.Trim();
@@ -2096,17 +2364,20 @@ namespace DHT11
                 bool hasAlarm = (alarmType != "正常");
 
                 // 构建JSON格式的数据(soilMoisture=土壤湿度%, 与小程序字段对应)
+                // 修复: 原来直接用 {temperature} 插值, 受当前区域设置影响 —— 德语/法语等小数点是逗号,
+                //       会拼出 "temperature": 25,5 这种非法 JSON, 小程序端 JSON.parse 直接失败。
+                //       统一用 InvariantCulture 格式化, 保证小数点永远是 '.'。
                 string jsonData = $@"{{
-    ""timestamp"": ""{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff}"",
-    ""temperature"": {temperature},
-    ""humidity"": {humidity},
-    ""soilMoisture"": {_waterLevel},
-    ""lightPercent"": {_lightLevel},
+    ""timestamp"": ""{DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss.fff", CultureInfo.InvariantCulture)}"",
+    ""temperature"": {temperature.ToString("F1", CultureInfo.InvariantCulture)},
+    ""humidity"": {humidity.ToString("F1", CultureInfo.InvariantCulture)},
+    ""soilMoisture"": {_waterLevel.ToString(CultureInfo.InvariantCulture)},
+    ""lightPercent"": {_lightLevel.ToString(CultureInfo.InvariantCulture)},
     ""airQuality"": ""{_airQuality}"",
     ""servoStatus"": ""{_servoStatus}"",
     ""motorStatus"": ""{_motorStatus}"",
     ""alarmType"": ""{alarmType}"",
-    ""hasAlarm"": {hasAlarm.ToString().ToLower()}
+    ""hasAlarm"": {hasAlarm.ToString().ToLowerInvariant()}
 }}";
 
                 var message = new MqttApplicationMessageBuilder()
@@ -2128,14 +2399,12 @@ namespace DHT11
         // 更新MQTT连接状态标签
         private void UpdateMqttStatus(string status, Color color)
         {
-            if (mqttStatusLabel.InvokeRequired)
+            // 修复: 原来直接 Invoke, 关窗瞬间会抛 ObjectDisposedException 到 MQTT 回调线程; 统一走 SafeInvoke。
+            SafeInvoke(delegate
             {
-                mqttStatusLabel.Invoke(new Action(() => UpdateMqttStatus(status, color)));
-                return;
-            }
-
-            mqttStatusLabel.Text = "● " + status;
-            mqttStatusLabel.ForeColor = color;
+                mqttStatusLabel.Text = "● " + status;
+                mqttStatusLabel.ForeColor = color;
+            });
         }
 
         // 订阅MQTT主题
@@ -2150,13 +2419,24 @@ namespace DHT11
                 await _mqttClient.SubscribeAsync(subscribeOptions);
                 LogMessage($"已订阅主题: {topic}", Color.Green);
 
-                // 设置消息接收处理器
-                _mqttClient.ApplicationMessageReceivedAsync += OnMqttMessageReceived;
+                // 修复: 原来在这里 += OnMqttMessageReceived。_mqttClient 只在 InitializeMqttClient 创建一次,
+                //       用户"断开→重连"一次就多挂一个处理器 → 一条 MQTT 命令被转发到串口 N 次(小程序按一次开窗,
+                //       STM32 收到多次 DUOJ-1)。而且该 += 被"订阅主题非空"门控, 订阅主题留空时处理器压根不挂载,
+                //       小程序控制彻底失灵。现在改为在 InitializeMqttClient 里只挂一次, 并用 _mqttHandlerAttached 防重。
+                AttachMqttMessageHandler();
             }
             catch (Exception ex)
             {
                 LogMessage($"订阅主题失败: {ex.Message}", Color.Red);
             }
+        }
+
+        // 挂载 MQTT 消息处理器(全生命周期只挂一次)
+        private void AttachMqttMessageHandler()
+        {
+            if (_mqttClient == null || _mqttHandlerAttached) return;
+            _mqttClient.ApplicationMessageReceivedAsync += OnMqttMessageReceived;
+            _mqttHandlerAttached = true;
         }
 
         // MQTT消息接收处理
@@ -2170,7 +2450,7 @@ namespace DHT11
                     e.ApplicationMessage.PayloadSegment.Count);
 
                 // 在UI线程中处理
-                this.Invoke((MethodInvoker)delegate
+                SafeInvoke(delegate
                 {
                     LogMessage($"[MQTT接收] 主题:{topic} 消息:{payload}", Color.Purple);
 
@@ -2295,8 +2575,7 @@ namespace DHT11
                 UpdateVideoStatus("连接中...", Color.Orange);
                 LogMessage($"正在连接视频流: {streamUrl}");
 
-                _videoHttpClient = new HttpClient();
-                _videoHttpClient.Timeout = TimeSpan.FromSeconds(10);
+                _videoCancellationToken?.Dispose();
                 _videoCancellationToken = new CancellationTokenSource();
 
                 videoConnectButton.Enabled = false;
@@ -2323,8 +2602,9 @@ namespace DHT11
         {
             try
             {
+                // 只取消令牌并清理画面; HttpClient 是共用的, 不能在断开时 Dispose(否则下次连接直接 ObjectDisposedException),
+                // 它只在 FormClosing 里统一释放。
                 _videoCancellationToken?.Cancel();
-                _videoHttpClient?.Dispose();
                 _videoStreaming = false;
 
                 UpdateVideoStatus("未连接", Color.Gray);
@@ -2332,14 +2612,13 @@ namespace DHT11
                 videoDisconnectButton.Enabled = false;
                 videoIpTextBox.Enabled = true;
 
-                if (videoPictureBox.InvokeRequired)
+                // 修复: 原来直接把 Image 置 null 不 Dispose, 长期连接/断开会把帧缓冲句柄漏光
+                SafeInvoke(delegate
                 {
-                    videoPictureBox.Invoke(new Action(() => videoPictureBox.Image = null));
-                }
-                else
-                {
+                    var oldImage = videoPictureBox.Image;
                     videoPictureBox.Image = null;
-                }
+                    oldImage?.Dispose();
+                });
 
                 LogMessage("视频流已断开");
             }
@@ -2360,11 +2639,11 @@ namespace DHT11
                     response.EnsureSuccessStatusCode();
 
                     // 连接成功，更新状态
-                    this.Invoke(new Action(() =>
+                    SafeInvoke(delegate
                     {
                         UpdateVideoStatus("已连接", Color.Green);
                         LogMessage("视频流连接成功", Color.Green);
-                    }));
+                    });
 
                     using (var stream = await response.Content.ReadAsStreamAsync())
                     {
@@ -2425,14 +2704,14 @@ namespace DHT11
                     }
 
                     LogMessage($"视频流接收错误: {errorMsg}", Color.Red);
-                    this.Invoke(new Action(() =>
+                    SafeInvoke(delegate
                     {
                         UpdateVideoStatus("连接失败", Color.Red);
                         videoConnectButton.Enabled = true;
                         videoDisconnectButton.Enabled = false;
                         videoIpTextBox.Enabled = true;
                         MessageBox.Show($"视频流连接失败: {errorMsg}{suggestion}", "连接错误", MessageBoxButtons.OK, MessageBoxIcon.Error);
-                    }));
+                    });
                 }
             }
             catch (Exception ex)
@@ -2440,13 +2719,13 @@ namespace DHT11
                 if (_videoStreaming)
                 {
                     LogMessage($"视频流接收错误: {ex.Message}", Color.Red);
-                    this.Invoke(new Action(() =>
+                    SafeInvoke(delegate
                     {
                         UpdateVideoStatus("连接断开", Color.Red);
                         videoConnectButton.Enabled = true;
                         videoDisconnectButton.Enabled = false;
                         videoIpTextBox.Enabled = true;
-                    }));
+                    });
                 }
             }
             finally
@@ -2460,25 +2739,24 @@ namespace DHT11
         {
             try
             {
+                // 修复: 原来 Image.FromStream(ms) 写在 using(ms) 里面 —— GDI+ 明确要求"流必须在 Image 生命周期内保持打开",
+                //       而 PictureBox 是之后才绘制的, 属于踩文档红线(偶发"参数无效"/半幅画面)。
+                //       这里先把像素复制到独立的 Bitmap, 解码完立刻关流。
+                Bitmap image = null;
                 using (var ms = new MemoryStream(frameData))
+                using (var decoded = Image.FromStream(ms))
                 {
-                    var image = Image.FromStream(ms);
+                    image = new Bitmap(decoded);
+                }
 
-                    if (videoPictureBox.InvokeRequired)
-                    {
-                        videoPictureBox.Invoke(new Action(() =>
-                        {
-                            var oldImage = videoPictureBox.Image;
-                            videoPictureBox.Image = image;
-                            oldImage?.Dispose();
-                        }));
-                    }
-                    else
-                    {
-                        var oldImage = videoPictureBox.Image;
-                        videoPictureBox.Image = image;
-                        oldImage?.Dispose();
-                    }
+                if (!SafeInvoke(delegate
+                {
+                    var oldImage = videoPictureBox.Image;
+                    videoPictureBox.Image = image;
+                    oldImage?.Dispose();
+                }))
+                {
+                    image.Dispose();   // 窗口已关闭, 画面没交出去, 立即回收
                 }
             }
             catch (Exception ex)
@@ -2490,14 +2768,12 @@ namespace DHT11
         // 更新视频连接状态标签
         private void UpdateVideoStatus(string status, Color color)
         {
-            if (videoStatusLabel.InvokeRequired)
+            // 修复: 同 UpdateMqttStatus, 改为 SafeInvoke 避免关窗期间抛异常。
+            SafeInvoke(delegate
             {
-                videoStatusLabel.Invoke(new Action(() => UpdateVideoStatus(status, color)));
-                return;
-            }
-
-            videoStatusLabel.Text = "● " + status;
-            videoStatusLabel.ForeColor = color;
+                videoStatusLabel.Text = "● " + status;
+                videoStatusLabel.ForeColor = color;
+            });
         }
 
         #endregion
