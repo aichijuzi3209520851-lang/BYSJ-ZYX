@@ -70,17 +70,17 @@ int fputc(int ch, FILE *f)
 
 
 #if EN_USART1_RX   /* 若使能串口1接收 */
-u8 USART_RX_BUF[USART_REC_LEN];     //串口1接收缓存
+volatile u8 USART_RX_BUF[USART_REC_LEN];     //串口1接收缓存
 /* 接收状态标志 bit 定义
  * bit15:  接收完成标志
  * bit14:  已收到0x0d
  * bit13~0: 收到有效字节数
  */
-u16 USART_RX_STA=0;       //串口1接收状态标志
+volatile u16 USART_RX_STA=0;       //串口1接收状态标志
 
 #if EN_USART3_RX   /* 若使能串口3接收 */
-u8 USART3_RX_BUF[USART_REC_LEN];     //串口3接收缓存
-u16 USART3_RX_STA=0;       //串口3接收状态标志
+volatile u8 USART3_RX_BUF[USART_REC_LEN];     //串口3接收缓存
+volatile u16 USART3_RX_STA=0;       //串口3接收状态标志
 #endif
 
 /**
@@ -149,7 +149,7 @@ static void USART_DispatchCommand(uint8_t src, u8 *buf, u16 sta)
 
     msg.src = src;
     msg.len = (len > CMD_PAYLOAD_MAX) ? CMD_PAYLOAD_MAX : len;
-    memcpy(msg.data, buf, msg.len);
+    memcpy(msg.data, (const u8 *)buf, msg.len);  /* 显式去volatile: ISR上下文内拷贝安全 */
 
     xQueueSendFromISR(xCmdQueue, &msg, &xHigherPriorityTaskWoken);
     portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
@@ -177,7 +177,7 @@ void USART1_IRQHandler(void)
 				else                        //接收完成
 				{
 				#ifdef USE_FREERTOS
-					USART_DispatchCommand(1, USART_RX_BUF, USART_RX_STA);
+					USART_DispatchCommand(1, (u8 *)USART_RX_BUF, USART_RX_STA);
 					USART_RX_STA=0;         //帧已被消费, 立即重置接收
 				#else
 					USART_RX_STA|=0x8000;   //裸机: 置完成标志, 主循环查询
@@ -265,7 +265,7 @@ void USART3_IRQHandler(void)
 				else                          //接收完成
 				{
 				#ifdef USE_FREERTOS
-					USART_DispatchCommand(3, USART3_RX_BUF, USART3_RX_STA);
+					USART_DispatchCommand(3, (u8 *)USART3_RX_BUF, USART3_RX_STA);
 					USART3_RX_STA=0;         //帧已被消费, 立即重置接收
 				#else
 					USART3_RX_STA|=0x8000;   //裸机: 置完成标志, 主循环查询

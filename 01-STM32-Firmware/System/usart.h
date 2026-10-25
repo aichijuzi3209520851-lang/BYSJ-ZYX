@@ -40,10 +40,10 @@ typedef struct
     char    data[CMD_PAYLOAD_MAX];      /* 帧内容(不含\r\n) */
 } CmdMsg_t;
 
-extern u8  USART_RX_BUF[USART_REC_LEN]; //串口1接收缓存
-extern u16 USART_RX_STA;         		//串口1接收状态标志
-extern u8  USART3_RX_BUF[USART_REC_LEN]; //串口3接收缓存
-extern u16 USART3_RX_STA;         		//串口3接收状态标志
+extern volatile u8  USART_RX_BUF[USART_REC_LEN]; //串口1接收缓存
+extern volatile u16 USART_RX_STA;         		//串口1接收状态标志
+extern volatile u8  USART3_RX_BUF[USART_REC_LEN]; //串口3接收缓存
+extern volatile u16 USART3_RX_STA;         		//串口3接收状态标志
 
 #ifdef USE_FREERTOS
 extern QueueHandle_t xCmdQueue;         //命令队列(ISR投递, 通信任务消费)
