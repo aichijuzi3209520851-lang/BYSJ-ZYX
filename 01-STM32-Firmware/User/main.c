@@ -1,4 +1,4 @@
-﻿/**
+/**
   ******************************************************************************
   * @file    User/main.c
   * @brief   智能温室环境监控系统主程序(FreeRTOS任务化版)
@@ -38,11 +38,14 @@
 //	DATA--PA15(接DHT11)
 //	Soil Sensor AO--PA0(ADC通道)  (D2-5-2K电容式,读数与湿度成反比)
 //	Smoke DOUT--PA6
+//	Light Sensor AO--PB1(ADC通道9, 光照强度采集, 不联动蜂鸣器)
 //	红灯LED--PB10(烟雾报警) [占用USART3_TX;原PA1与舵机TIM2_CH2冲突]
 //  黄灯LED--PB0(温湿度报警)
 //  蓝灯LED--PA3(土壤过湿报警)
 //  烟雾报警LED--PB4(烟雾浓度报警)
 //  蜂鸣器--PA7
+//  OLED屏--SCL/SDA接PB8/PB9; VCC/GND可接PB7/PB6(固件GPIO供电,见OLED.c),
+//          也可直接接电源排针(推荐, GPIO单脚供流上限25mA)
 
 #include "stm32f10x.h"
 #include "Delay.h"
@@ -50,6 +53,7 @@
 #include "usart.h"
 #include "OLED.h"
 #include "Water.h"      /* 土壤湿度传感器驱动(D2-5-2K) */
+#include "Light.h"      /* 光敏传感器驱动(仅采集, 不联动蜂鸣器) */
 #include "Motor.h"
 #include "Servo.h"
 #include "FreeRTOS.h"
@@ -94,6 +98,8 @@ typedef struct
     uint8_t  humidity;
     uint16_t soil_raw;
     uint8_t  soil_percent;
+    uint16_t light_raw;       /* 光照ADC原始值(0~4095) */
+    uint8_t  light_percent;   /* 光照强度百分比(0~100%, 越大越亮) */
     char     air_status[10];
     uint8_t  dht11_ok;
 } SensorMsg_t;
@@ -112,6 +118,8 @@ typedef struct
     uint8_t  humidity;
     uint16_t soil_raw;
     uint8_t  soil_percent;
+    uint16_t light_raw;       /* 光照ADC原始值(0~4095) */
+    uint8_t  light_percent;   /* 光照强度百分比(0~100%, 越大越亮) */
     char     air_status[10];
     uint8_t  dht11_ok;
     uint8_t  servo_angle;     /* 0或180 */
@@ -249,6 +257,15 @@ static void Sensor_Task(void *pvParameters)
         msg.soil_raw     = (uint16_t)(adc_sum / 8);
         msg.soil_percent = Soil_GetMoisturePercent();
 
+        /* ---- 光照强度: 8次均值(仅采集展示, 不参与报警/蜂鸣联动) ---- */
+        adc_sum = 0;
+        for (i = 0; i < 8; i++)
+        {
+            adc_sum += Light_GetRaw();
+        }
+        msg.light_raw     = (uint16_t)(adc_sum / 8);
+        msg.light_percent = Light_GetPercent();
+
         /* ---- 烟雾: 双采样消抖(非阻塞) ---- */
         smoke_first = SMOKE_DOUT;
         vTaskDelay(pdMS_TO_TICKS(SMOKE_DEBOUNCE_MS));
@@ -310,12 +327,14 @@ static void Alarm_Task(void *pvParameters)
 
         /* ---- 状态组装(保留模式/执行器字段) ---- */
         State_Get(&st);
-        st.temperature  = s.temperature;
-        st.humidity     = s.humidity;
-        st.soil_raw     = s.soil_raw;
-        st.soil_percent = s.soil_percent;
+        st.temperature   = s.temperature;
+        st.humidity      = s.humidity;
+        st.soil_raw      = s.soil_raw;
+        st.soil_percent  = s.soil_percent;
+        st.light_raw     = s.light_raw;
+        st.light_percent = s.light_percent;
         strcpy(st.air_status, s.air_status);
-        st.dht11_ok     = s.dht11_ok;
+        st.dht11_ok      = s.dht11_ok;
 
         /* ---- 自动模式执行器联动(手动模式不干预) ---- */
         if (!st.manual_mode)
@@ -446,7 +465,9 @@ static void Comm_Task(void *pvParameters)
                 printf("DHT11 Read Failed!   ");
             }
 
-            printf("Soil:%d%%(raw=%d)  ", rep.sensor.soil_percent, rep.sensor.soil_raw);
+            printf("Soil:%d%%(raw=%d)  Light:%d%%(raw=%d)  ",
+                   rep.sensor.soil_percent, rep.sensor.soil_raw,
+                   rep.sensor.light_percent, rep.sensor.light_raw);
 
             printf("Servo:%s Motor:%s ",
                    (st.servo_angle == 180) ? "ON " : "OFF",
@@ -503,6 +524,7 @@ static void Display_Task(void *pvParameters)
         }
 
         OLED_ShowNum(3, 12, st.soil_percent, 3);
+        OLED_ShowNum(4, 13, st.light_percent, 3);   /* 光照强度百分比 */
         OLED_ShowString(4, 5, st.air_status);
 
         vTaskDelay(pdMS_TO_TICKS(DISPLAY_PERIOD_MS));
@@ -542,6 +564,7 @@ int main(void)
     DHT11_Init();
     OLED_Init();
     ADC1_Init();
+    Light_Init();        /* 光敏PB1(ADC通道9), 复用ADC1外设, 须在ADC1_Init后 */
     Alarm_Hardware_Init();
     Motor_Init();
     Servo_Init();
@@ -553,7 +576,7 @@ int main(void)
     OLED_ShowString(2, 1, "Humi:  %RH");
     OLED_ShowString(3, 1, "Soil Water:");
     OLED_ShowChar(3, 15, '%');
-    OLED_ShowString(4, 1, "Air: ");
+    OLED_ShowString(4, 1, "Air:      L:   %");   /* 列5空气状态, 列13光照3位 */
 
     /* ---- 初始状态 ---- */
     memset(&init_state, 0, sizeof(init_state));

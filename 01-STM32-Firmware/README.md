@@ -54,6 +54,7 @@ USART1/3 ISR(prio6) ──帧──▶ xCmdQueue ──▶ 通信任务(prio2): 
 | --- | --- | --- |
 | DHT11 温湿度 | PA15 | 单总线 |
 | 土壤湿度 D2-5-2K AO | PA0 | ADC1_IN0，模拟量（读数与湿度成反比） |
+| 光敏传感器 AO | PB1 | ADC1_IN9，模拟量（仅采集光照，不联动蜂鸣器） |
 | 烟雾传感器 DOUT | PA6 | 数字量，低电平=污染 |
 | 红灯 LED（烟雾报警） | PB10 | 低电平点亮（占用后 USART3 仅可接收） |
 | 黄灯 LED（温湿度报警） | PB0 | 低电平点亮 |
@@ -64,6 +65,8 @@ USART1/3 ISR(prio6) ──帧──▶ xCmdQueue ──▶ 通信任务(prio2): 
 | 电机（风扇） | PA2 + PA4/PA5 | TIM2_CH3 PWM 调速 + 方向 IO |
 | USART1 | PA9(TX) / PA10(RX) | 9600 8N1，printf 调试输出 + 指令 |
 | USART3 | PB11(RX) | 9600 8N1，指令接收（PB10 已被红灯占用） |
+| OLED (SSD1306) | PB8(SCL) / PB9(SDA) | 软件 I2C 开漏；VCC/GND 可接 PB7/PB6（固件 GPIO 供电）或电源排针（推荐） |
+| 白色 LED（光照联动预留） | PB12 | 预留脚，暂未启用；后续光弱亮灯联动用 |
 
 ## 统一报警阈值
 
@@ -94,10 +97,11 @@ USART1 与 USART3 收到指令后统一交给 `Parse_Command_Frame()` 解析：
 ## 串口数据输出（每 1.5s 一帧）
 
 ```
-Temp:26C   Humi:60%RH   Soil:35%(raw=1200)  Servo:OFF Motor:OFF  Air:nice
+Temp:26C   Humi:60%RH   Soil:35%(raw=1200)  Light:72%(raw=2200)  Servo:OFF Motor:OFF  Air:nice
 ```
 
 - `Soil:` 土壤湿度百分比（`raw` 为 ADC 原始值，便于两点校准）
+- `Light:` 光照强度百分比（`raw` 为 ADC 原始值；校准见 System/Light.h，仅采集不联动报警）
 - 行尾出现 `Warning` 表示固件判定处于报警状态
 - PC 上位机按此格式解析并通过 MQTT 发布（详见根目录 README）
 

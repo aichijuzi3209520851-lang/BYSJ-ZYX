@@ -315,9 +315,40 @@ void OLED_ShowBinNum(uint8_t Line, uint8_t Column, uint32_t Number, uint8_t Leng
   *          开头约几十ms的上电等待循环：SSD1306 断电重启后需要时间建立
   *          内部电荷泵，立即发命令可能被忽略（无复位引脚模块的保守做法）
   */
+/**
+  * @brief  OLED 供电引脚初始化（PB6=GND, PB7=3.3V）
+  * @param  无
+  * @retval 无
+  * @note   本机接线把 OLED 模块的 GND/VCC 接在 PB6/PB7 上, 由 GPIO 供电:
+  *         PB6 推挽输出低电平当地, PB7 推挽输出高电平当 3.3V 电源轨。
+  *         若模块 VCC/GND 直接接电源排针, 本段输出悬空无任何影响,
+  *         但仍推荐改回电源排针供电(GPIO 单脚持续电流上限25mA,
+  *         且复位/烧录期间引脚浮空, 屏会短暂黑一下)
+  */
+static void OLED_Power_Init(void)
+{
+    GPIO_InitTypeDef GPIO_InitStructure;
+
+    RCC_APB2PeriphClockCmd(RCC_APB2Periph_GPIOB, ENABLE);
+
+    /* PB6: 推挽输出低 = OLED GND */
+    GPIO_InitStructure.GPIO_Pin   = GPIO_Pin_6;
+    GPIO_InitStructure.GPIO_Mode  = GPIO_Mode_Out_PP;
+    GPIO_InitStructure.GPIO_Speed = GPIO_Speed_50MHz;
+    GPIO_Init(GPIOB, &GPIO_InitStructure);
+    GPIO_WriteBit(GPIOB, GPIO_Pin_6, Bit_RESET);
+
+    /* PB7: 推挽输出高 = OLED VCC(3.3V) */
+    GPIO_InitStructure.GPIO_Pin = GPIO_Pin_7;
+    GPIO_Init(GPIOB, &GPIO_InitStructure);
+    GPIO_WriteBit(GPIOB, GPIO_Pin_7, Bit_SET);
+}
+
 void OLED_Init(void)
 {
 	uint32_t i, j;
+
+	OLED_Power_Init();					//先给模块上电(PB7高/PB6低), 再等内部电源就绪
 
 	for (i = 0; i < 1000; i++)			//上电延时（保守等待SSD1306内部电源就绪）
 	{
