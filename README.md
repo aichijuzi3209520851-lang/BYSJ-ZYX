@@ -47,7 +47,7 @@ PC 上位机通过串口解析后经 MQTT 上云，微信小程序订阅数据�
 | 目录 | 内容 | 技术栈 |
 | --- | --- | --- |
 | [`01-STM32-Firmware`](./01-STM32-Firmware) | 下位机固件：裸机分时隙主循环、四路传感采集、OLED 显示、声光报警、执行器联动、双串口指令毫秒级响应 | C / Keil MDK5 / 标准外设库 |
-| [`02-PC-UpperComputer`](./02-PC-UpperComputer) | PC 上位机：串口解析、曲线图表、MQTT 发布/订阅转发、视频监控面板 | C# .NET Framework 4.7.2 / WinForms / MQTTnet |
+| [`02-PC-UpperComputer`](./02-PC-UpperComputer) | PC 上位机：串口解析、曲线图表、MQTT 发布/订阅转发、登录鉴权 | C# .NET Framework 4.7.2 / WinForms / MQTTnet |
 | [`03-EMQX-Server`](./03-EMQX-Server) | EMQX 一键启动器（MQTT.exe）与服务器部署说明 | C# .NET 10 控制台 |
 | [`04-WeChat-Miniprogram`](./04-WeChat-Miniprogram) | 微信小程序：温室主题轮播首页、五项环境数据、执行器远程控制、报警提醒、MQTT 配置与历史 | 原生小程序 / MQTT over WebSocket |
 
@@ -68,7 +68,7 @@ PC 上位机通过串口解析后经 MQTT 上云，微信小程序订阅数据�
 
 - **稳定的小程序 MQTT 接入**：keep-alive 60s + 30s PINGREQ 心跳 + 指数退避自动重连 + DISCONNECT 优雅退出
 - **小程序温室主题轮播首页**：4 张 Pexels 免费商用实拍图（大棚纵览/番茄/草莓/LED 垂直农场）自动轮播 + 胶囊指示点
-- **上位机附加能力**：GDI+ 实时四曲线图（温度/湿度/土壤/光照）、CSV 导出、ESP32-CAM MJPEG 视频监控面板
+- **上位机附加能力**：GDI+ 实时四曲线图（温度/湿度/土壤/光照）、CSV 导出、登录鉴权（默认 `admin` / `admin`，支持注销重登）
 
 ## 数据契约
 

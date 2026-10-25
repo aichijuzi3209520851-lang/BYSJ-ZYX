@@ -8,7 +8,6 @@ using System.Globalization;
 using System.IO;
 using System.IO.Ports;
 using System.Linq;
-using System.Net.Http;
 using System.Text;
 using System.Text.RegularExpressions;
 using System.Threading;
@@ -55,9 +54,8 @@ namespace DHT11
         private Label lblStatus;
         private TextBox logTextBox;
         private Label logLabel;
+        private Label chartLabel;
         private CheckBox autoScrollCheckBox;
-        private Label tempUnitLabel;
-        private Label humUnitLabel;
 
         // 新增UI控件
         private Label waterLabel;
@@ -78,6 +76,7 @@ namespace DHT11
         private Button modeAutoButton;
         private Button modeManualButton;
         private Label modeStatusLabel;
+        private Label buzzerLabel;   // 蜂鸣器卡片数值(原为 InitializeCustomComponents 内局部变量, 卡片化后提为字段)
 
         // MQTT相关控件
         private TextBox mqttBrokerTextBox;
@@ -97,13 +96,13 @@ namespace DHT11
         private PictureBox avatarPictureBox;
         private Label avatarLabel;
 
-        // 视频监控控件
-        private Label videoLabel;
-        private TextBox videoIpTextBox;
-        private Button videoConnectButton;
-        private Button videoDisconnectButton;
-        private PictureBox videoPictureBox;
-        private Label videoStatusLabel;
+        // 布局容器控件(由 InitializeCustomComponents 创建, ApplyResponsiveLayout 统一摆放)
+        private Panel headerPanel;
+        private CardPanel connectPanel;
+        private Panel cardsPanel;
+        private CardPanel devicePanel;
+        private Button logoutButton;
+        private readonly List<CardPanel> _cards = new List<CardPanel>();
 
         // 统一报警阈值(与STM32固件/微信小程序保持一致, 三端使用同一组数值)
         // 报警条件: 温度>26°C 或 空气湿度>85%RH 或 土壤湿度>40% 或 空气污染
@@ -123,6 +122,8 @@ namespace DHT11
         private Color darkColor = Color.FromArgb(52, 73, 94);           // 深蓝灰
         private Color lightColor = Color.FromArgb(236, 240, 241);       // 浅灰
         private Color chartBgColor = Color.FromArgb(250, 250, 250);     // 图表背景
+        private Color pageBgColor = Color.FromArgb(244, 246, 249);      // 页面底色(略冷灰)
+        private Color textSecondaryColor = Color.FromArgb(120, 132, 148); // 次要文字色
 
         // 数据格式解析配置：固件固定使用 STM32 格式 (Temp:XXC Humi:XX%RH ...), 无需运行时切换
 
@@ -140,12 +141,7 @@ namespace DHT11
         private bool _mqttAutoPublish = true;               // 是否自动发布数据到MQTT
         private bool _mqttHandlerAttached = false;          // 消息处理器是否已挂载(防止重连后重复挂载)
 
-        // 视频流相关
-        // 修复: 原来每次点"连接"都 new HttpClient 且旧的从不释放 → 套接字/句柄泄漏。
-        //       改成整个进程共用一个实例, 断开时只取消 CancellationToken, 到关窗时才释放。
-        private readonly HttpClient _videoHttpClient = new HttpClient { Timeout = TimeSpan.FromSeconds(10) };
-        private CancellationTokenSource _videoCancellationToken;
-        private bool _videoStreaming = false;
+        // 注: 视频监控模块已整体移除(相关字段/方法/面板/HTTP 客户端全部删除)
 
         public Form1()
         {
@@ -157,664 +153,530 @@ namespace DHT11
             LoadAvailablePorts();
         }
 
+        // ==================== 布局度量 ====================
+        // 单一真源: 所有坐标只在 ApplyResponsiveLayout() 里计算。
+        // 原实现"构造时写一套坐标、Resize 时再改另一套", 两套数值不一致就错位, 这里彻底改掉。
+        private const int PadOuter = 12;            // 窗体四周留白
+        private const int GapBlock = 12;            // 区块间距
+        private const int HeaderHeight = 62;        // 顶部标题栏高度
+        private const int ConnectHeight = 136;      // 连接配置卡片高度(两行)
+        private const int CardHeight = 96;          // 传感器/执行器卡片高度
+        private const int DeviceHeight = 64;        // 设备控制条高度
+        private const int SectionLabelHeight = 24;  // 图表/日志小标题占用高度
+
         private void InitializeCustomComponents()
         {
             this.SuspendLayout();
 
-            // 窗体设置
-            this.Text = "智能温室";
-            this.ClientSize = new Size(1350, 750);
-            this.MinimumSize = new Size(1350, 750);  // 设置最小窗口尺寸
+            // ========== 窗体基础设置 ==========
+            this.Text = "智能温室监控系统";
+
+            // 初始尺寸按屏幕工作区收敛: 高分屏缩放到 150% 时, DPI 未感知的 WinForms 程序拿到的是缩放后的逻辑像素,
+            // 写死 1380x840 会比实际可用区域还大, 窗口右/下边界直接跑出屏幕。这里以工作区为准做一次钳制。
+            Rectangle workArea = Screen.PrimaryScreen != null
+                ? Screen.PrimaryScreen.WorkingArea
+                : new Rectangle(0, 0, 1280, 800);
+            int targetWidth = Math.Min(1380, workArea.Width - 24);
+            int targetHeight = Math.Min(840, workArea.Height - 48);
+            if (targetWidth < 900) targetWidth = Math.Max(320, workArea.Width - 24);
+            if (targetHeight < 620) targetHeight = Math.Max(240, workArea.Height - 48);
+
+            // MinimumSize 是含边框的整窗尺寸, 必须同时受工作区约束, 否则一设下去就会被系统撑回屏幕外。
+            this.MinimumSize = new Size(
+                Math.Min(960, workArea.Width - 24),
+                Math.Min(680, workArea.Height - 24));
+            this.ClientSize = new Size(targetWidth, targetHeight);
             this.FormBorderStyle = FormBorderStyle.Sizable;
             this.MaximizeBox = true;
             this.StartPosition = FormStartPosition.CenterScreen;
-            this.BackColor = lightColor;
+            this.BackColor = pageBgColor;
+            this.DoubleBuffered = true;
             this.FormClosing += Form1_FormClosing;
             this.Resize += Form1_Resize;
 
-            // ========== 控制面板 ==========
-            Panel controlPanel = new Panel
+            // 自上而下: 标题栏 → 连接配置 → 传感器卡片 → 设备控制 → (图表 | 日志)
+            BuildHeader();
+            BuildConnectPanel();
+            BuildSensorCards();
+            BuildDevicePanel();
+            BuildChartAndLog();
+
+            this.ResumeLayout(false);
+            this.PerformLayout();
+
+            ApplyResponsiveLayout();
+        }
+
+        // ========== 顶部标题栏: 系统名 + 副标题 + 头像 + 昵称 + 注销 ==========
+        private void BuildHeader()
+        {
+            headerPanel = new Panel
             {
                 Location = new Point(0, 0),
-                Size = new Size(1350, 110),
+                Size = new Size(this.ClientSize.Width, HeaderHeight),
                 BackColor = Color.White
             };
-            controlPanel.Paint += ControlPanel_Paint;
+            headerPanel.Paint += HeaderPanel_Paint;
 
-            // 串口选择
+            Label appTitle = new Label
+            {
+                Location = new Point(PadOuter + 4, 10),
+                AutoSize = true,
+                Text = "智能温室监控系统",
+                Font = new Font("微软雅黑", 15F, FontStyle.Bold),
+                ForeColor = darkColor,
+                BackColor = Color.Transparent
+            };
+
+            Label appSubTitle = new Label
+            {
+                Location = new Point(PadOuter + 6, 38),
+                AutoSize = true,
+                Text = "STM32 环境采集 · 设备联动 · MQTT 远程监控",
+                Font = new Font("微软雅黑", 8.5F),
+                ForeColor = textSecondaryColor,
+                BackColor = Color.Transparent
+            };
+
+            avatarPictureBox = new PictureBox
+            {
+                Location = new Point(0, 0),
+                Size = new Size(36, 36),
+                SizeMode = PictureBoxSizeMode.Zoom,
+                BackColor = Color.Transparent
+            };
+
+            avatarLabel = new Label
+            {
+                Location = new Point(0, 0),
+                AutoSize = true,
+                Text = "爱吃橘子🍊",
+                Font = new Font("微软雅黑", 9F),
+                ForeColor = darkColor,
+                BackColor = Color.Transparent
+            };
+
+            logoutButton = CreateStyledButton("注销", new Point(0, 0), new Size(64, 26), textSecondaryColor);
+            logoutButton.Click += LogoutButton_Click;
+
+            headerPanel.Controls.AddRange(new Control[] {
+                appTitle, appSubTitle, avatarPictureBox, avatarLabel, logoutButton
+            });
+
+            this.Controls.Add(headerPanel);
+
+            LoadCircularAvatar();   // 头像按 60px 生成, 这里缩放到 36px 显示
+        }
+
+        // ========== 连接配置卡片: 第一行串口 + 数据操作, 第二行 MQTT ==========
+        private void BuildConnectPanel()
+        {
+            connectPanel = new CardPanel
+            {
+                Location = new Point(PadOuter, HeaderHeight + GapBlock),
+                Size = new Size(this.ClientSize.Width - PadOuter * 2, ConnectHeight),
+                Radius = 12,
+                ShowAccent = false
+            };
+            connectPanel.Paint += ConnectPanel_Paint;
+
+            Font fieldFont = new Font("微软雅黑", 9F);
+            Font textBoxFont = new Font("微软雅黑", 9.5F);
+
+            // ---------- 第一行: 串口 ----------
             portLabel = new Label
             {
-                Location = new Point(20, 15),
+                Location = new Point(16, 12),
                 AutoSize = true,
-                Text = "串口选择:",
-                Font = new Font("微软雅黑", 10F),
-                ForeColor = darkColor
+                Text = "串口选择",
+                Font = fieldFont,
+                ForeColor = textSecondaryColor,
+                BackColor = Color.Transparent
             };
 
             comPortComboBox = new ComboBox
             {
-                Location = new Point(20, 40),
-                Width = 120,
+                Location = new Point(16, 35),
+                Width = 110,
                 DropDownStyle = ComboBoxStyle.DropDownList,
-                Font = new Font("微软雅黑", 9F)
+                Font = fieldFont
             };
 
-            // 刷新按钮
-            refreshButton = CreateStyledButton("刷新", new Point(145, 40), new Size(60, 27), primaryColor);
+            refreshButton = CreateStyledButton("刷新", new Point(134, 34), new Size(56, 26), primaryColor);
             refreshButton.Click += RefreshButton_Click;
 
-            // 波特率选择
             baudRateLabel = new Label
             {
-                Location = new Point(220, 15),
+                Location = new Point(204, 12),
                 AutoSize = true,
-                Text = "波特率:",
-                Font = new Font("微软雅黑", 10F),
-                ForeColor = darkColor
+                Text = "波特率",
+                Font = fieldFont,
+                ForeColor = textSecondaryColor,
+                BackColor = Color.Transparent
             };
 
             baudRateComboBox = new ComboBox
             {
-                Location = new Point(220, 40),
-                Width = 100,
+                Location = new Point(204, 35),
+                Width = 88,
                 DropDownStyle = ComboBoxStyle.DropDownList,
-                Font = new Font("微软雅黑", 9F)
+                Font = fieldFont
             };
             baudRateComboBox.Items.AddRange(new object[] { "9600", "19200", "38400", "57600", "115200" });
             baudRateComboBox.SelectedIndex = 0;
             baudRateComboBox.SelectedIndexChanged += BaudRateComboBox_SelectedIndexChanged;
 
-            // 连接按钮
-            openButton = CreateStyledButton("连接串口", new Point(20, 75), new Size(90, 27), successColor);
+            openButton = CreateStyledButton("连接串口", new Point(306, 34), new Size(92, 26), successColor);
             openButton.Click += OpenButton_Click;
 
-            closeButton = CreateStyledButton("断开连接", new Point(120, 75), new Size(90, 27), dangerColor);
+            closeButton = CreateStyledButton("断开连接", new Point(406, 34), new Size(92, 26), dangerColor);
             closeButton.Click += CloseButton_Click;
             closeButton.Enabled = false;
 
-            // 状态标签
             lblStatus = new Label
             {
-                Location = new Point(230, 80),
-                AutoSize = true,
-                Text = "● 未连接",
-                Font = new Font("微软雅黑", 10F, FontStyle.Bold),
-                ForeColor = Color.Gray
-            };
-
-            // 清空数据按钮
-            clearButton = CreateStyledButton("清空数据", new Point(360, 75), new Size(90, 27), warningColor);
-            clearButton.Click += ClearButton_Click;
-
-            // 导出数据按钮
-            exportButton = CreateStyledButton("导出CSV", new Point(460, 75), new Size(90, 27), primaryColor);
-            exportButton.Click += ExportButton_Click;
-
-            // ========== MQTT配置区域 ==========
-            // MQTT服务器标签
-            mqttBrokerLabel = new Label
-            {
-                Location = new Point(700, 15),
-                AutoSize = true,
-                Text = "MQTT服务器:",
-                Font = new Font("微软雅黑", 10F),
-                ForeColor = darkColor
-            };
-
-            // MQTT服务器地址输入框
-            mqttBrokerTextBox = new TextBox
-            {
-                Location = new Point(700, 40),
-                Width = 160,
-                Text = "192.168.184.221:1883",
-                Font = new Font("微软雅黑", 9F)
-            };
-
-            // MQTT发布主题标签
-            mqttTopicLabel = new Label
-            {
-                Location = new Point(870, 15),
-                AutoSize = true,
-                Text = "发布主题:",
-                Font = new Font("微软雅黑", 10F),
-                ForeColor = darkColor
-            };
-
-            // MQTT发布主题输入框
-            mqttTopicTextBox = new TextBox
-            {
-                Location = new Point(870, 40),
-                Width = 150,
-                Text = "green/data",
-                Font = new Font("微软雅黑", 9F)
-            };
-
-            // MQTT订阅主题标签
-            mqttSubscribeTopicLabel = new Label
-            {
-                Location = new Point(1030, 15),
-                AutoSize = true,
-                Text = "订阅主题:",
-                Font = new Font("微软雅黑", 10F),
-                ForeColor = darkColor
-            };
-
-            // MQTT订阅主题输入框
-            mqttSubscribeTopicTextBox = new TextBox
-            {
-                Location = new Point(1030, 40),
-                Width = 100,
-                Text = "green/control",
-                Font = new Font("微软雅黑", 9F)
-            };
-
-            // 自动发布数据复选框（放在第二行左侧）
-            mqttAutoPublishCheckBox = new CheckBox
-            {
-                Location = new Point(700, 80),
-                AutoSize = true,
-                Text = "自动发布数据到MQTT",
-                Font = new Font("微软雅黑", 9F),
-                Checked = true
-            };
-            mqttAutoPublishCheckBox.CheckedChanged += MqttAutoPublishCheckBox_CheckedChanged;
-
-            // MQTT连接按钮（在发布主题输入框正下方）
-            mqttConnectButton = CreateStyledButton("连接MQTT", new Point(870, 75), new Size(90, 27), successColor);
-            mqttConnectButton.Click += MqttConnectButton_Click;
-
-            // MQTT断开按钮（在连接按钮右边）
-            mqttDisconnectButton = CreateStyledButton("断开MQTT", new Point(970, 75), new Size(90, 27), dangerColor);
-            mqttDisconnectButton.Click += MqttDisconnectButton_Click;
-            mqttDisconnectButton.Enabled = false;
-
-            // MQTT状态标签（在断开按钮右边）
-            mqttStatusLabel = new Label
-            {
-                Location = new Point(1070, 80),
+                Location = new Point(508, 40),
                 AutoSize = true,
                 Text = "● 未连接",
                 Font = new Font("微软雅黑", 9F, FontStyle.Bold),
-                ForeColor = Color.Gray
+                ForeColor = Color.Gray,
+                BackColor = Color.Transparent
             };
 
-            // ========== 头像和昵称 ==========
-            // 头像图片框
-            avatarPictureBox = new PictureBox
+            // 清空/导出 在 ApplyResponsiveLayout 里按卡片宽度右对齐
+            clearButton = CreateStyledButton("清空数据", new Point(0, 34), new Size(92, 26), warningColor);
+            clearButton.Click += ClearButton_Click;
+
+            exportButton = CreateStyledButton("导出CSV", new Point(0, 34), new Size(92, 26), primaryColor);
+            exportButton.Click += ExportButton_Click;
+
+            // ---------- 第二行: MQTT ----------
+            mqttBrokerLabel = new Label
             {
-                Location = new Point(1150, 15),
-                Size = new Size(60, 60),
-                SizeMode = PictureBoxSizeMode.Zoom,
-                BackColor = Color.White
+                Location = new Point(16, 76),
+                AutoSize = true,
+                Text = "MQTT 服务器",
+                Font = fieldFont,
+                ForeColor = textSecondaryColor,
+                BackColor = Color.Transparent
             };
-            // 加载并设置圆形头像
-            LoadCircularAvatar();
 
-            // 昵称标签
-            avatarLabel = new Label
+            mqttBrokerTextBox = new TextBox
             {
-                Location = new Point(1130, 78),
-                AutoSize = false,
-                Width = 100,
-                Height = 20,
-                Text = "爱吃橘子🍊",
-                Font = new Font("微软雅黑", 9F),
-                ForeColor = darkColor,
-                TextAlign = ContentAlignment.MiddleCenter
+                Location = new Point(16, 99),
+                Width = 180,
+                Text = "192.168.184.221:1883",
+                Font = textBoxFont
             };
 
-            // 添加到控制面板
-            controlPanel.Controls.AddRange(new Control[] {
+            mqttTopicLabel = new Label
+            {
+                Location = new Point(212, 76),
+                AutoSize = true,
+                Text = "发布主题",
+                Font = fieldFont,
+                ForeColor = textSecondaryColor,
+                BackColor = Color.Transparent
+            };
+
+            mqttTopicTextBox = new TextBox
+            {
+                Location = new Point(212, 99),
+                Width = 140,
+                Text = "green/data",
+                Font = textBoxFont
+            };
+
+            mqttSubscribeTopicLabel = new Label
+            {
+                Location = new Point(368, 76),
+                AutoSize = true,
+                Text = "订阅主题",
+                Font = fieldFont,
+                ForeColor = textSecondaryColor,
+                BackColor = Color.Transparent
+            };
+
+            mqttSubscribeTopicTextBox = new TextBox
+            {
+                Location = new Point(368, 99),
+                Width = 140,
+                Text = "green/control",
+                Font = textBoxFont
+            };
+
+            mqttConnectButton = CreateStyledButton("连接MQTT", new Point(526, 98), new Size(92, 26), successColor);
+            mqttConnectButton.Click += MqttConnectButton_Click;
+
+            mqttDisconnectButton = CreateStyledButton("断开MQTT", new Point(626, 98), new Size(92, 26), dangerColor);
+            mqttDisconnectButton.Click += MqttDisconnectButton_Click;
+            mqttDisconnectButton.Enabled = false;
+
+            mqttStatusLabel = new Label
+            {
+                Location = new Point(728, 104),
+                AutoSize = true,
+                Text = "● 未连接",
+                Font = new Font("微软雅黑", 9F, FontStyle.Bold),
+                ForeColor = Color.Gray,
+                BackColor = Color.Transparent
+            };
+
+            mqttAutoPublishCheckBox = new CheckBox
+            {
+                Location = new Point(0, 102),   // 右对齐, 具体位置在 ApplyResponsiveLayout 里算
+                AutoSize = true,
+                Text = "自动发布数据到MQTT",
+                Font = fieldFont,
+                Checked = true,
+                BackColor = Color.Transparent
+            };
+            mqttAutoPublishCheckBox.CheckedChanged += MqttAutoPublishCheckBox_CheckedChanged;
+
+            connectPanel.Controls.AddRange(new Control[] {
                 portLabel, comPortComboBox, refreshButton,
                 baudRateLabel, baudRateComboBox,
                 openButton, closeButton, lblStatus,
                 clearButton, exportButton,
-                mqttBrokerLabel, mqttBrokerTextBox, mqttTopicLabel, mqttTopicTextBox,
+                mqttBrokerLabel, mqttBrokerTextBox,
+                mqttTopicLabel, mqttTopicTextBox,
                 mqttSubscribeTopicLabel, mqttSubscribeTopicTextBox,
-                mqttConnectButton, mqttDisconnectButton,
-                mqttStatusLabel, mqttAutoPublishCheckBox,
-                avatarPictureBox, avatarLabel
+                mqttConnectButton, mqttDisconnectButton, mqttStatusLabel, mqttAutoPublishCheckBox
             });
 
-            // ========== 数据显示面板 ==========
-            Panel dataPanel = new Panel
-            {
-                Location = new Point(10, 130),
-                Size = new Size(920, 110),
-                BackColor = Color.White,
-                BorderStyle = BorderStyle.None
-            };
-            dataPanel.Paint += DataPanel_Paint;
+            this.Controls.Add(connectPanel);
+        }
 
-            // 温度图标
-            tempIconPictureBox = new PictureBox
+        // ========== 传感器/执行器卡片行 (8 张, 等分容器宽度) ==========
+        private void BuildSensorCards()
+        {
+            cardsPanel = new Panel
             {
-                Location = new Point(10, 30),
-                Size = new Size(35, 35),
-                SizeMode = PictureBoxSizeMode.Zoom,
-                Image = LoadIconSafely("ICON\\温度.png")
+                Location = new Point(PadOuter, HeaderHeight + GapBlock + ConnectHeight + GapBlock),
+                Size = new Size(this.ClientSize.Width - PadOuter * 2, CardHeight),
+                BackColor = pageBgColor
             };
 
-            // 温度显示
-            Label tempTitleLabel = new Label
-            {
-                Location = new Point(50, 10),
-                AutoSize = true,
-                Text = "温度",
-                Font = new Font("微软雅黑", 9F),
-                ForeColor = darkColor
-            };
+            _cards.Clear();
 
-            tempLabel = new Label
-            {
-                Location = new Point(50, 30),
-                Size = new Size(70, 30),
-                Text = "--.-",
-                Font = new Font("Arial", 18F, FontStyle.Bold),
-                ForeColor = dangerColor,
-                TextAlign = ContentAlignment.MiddleLeft
-            };
+            const float numFont = 17F;   // 数值型读数
+            const float txtFont = 13F;   // 状态型读数(正常/关闭/开启…)
 
-            tempUnitLabel = new Label
-            {
-                Location = new Point(50, 60),
-                AutoSize = true,
-                Text = "°C",
-                Font = new Font("Arial", 10F),
-                ForeColor = dangerColor
-            };
+            _cards.Add(CreateSensorCard("温度", "°C", "--.-", dangerColor, numFont, "ICON\\温度.png",
+                out tempLabel, out tempIconPictureBox));
+            _cards.Add(CreateSensorCard("湿度", "%RH", "--.-", primaryColor, numFont, "ICON\\湿度.png",
+                out humLabel, out humIconPictureBox));
+            _cards.Add(CreateSensorCard("土壤湿度", "%", "--", warningColor, numFont, "ICON\\水位.png",
+                out waterLabel, out waterIconPictureBox));
+            _cards.Add(CreateSensorCard("光照强度", "%", "--", Color.FromArgb(234, 160, 0), numFont, "ICON\\光照.png",
+                out lightLabel, out lightIconPictureBox));
+            _cards.Add(CreateSensorCard("空气质量", "", "nice", successColor, txtFont, "ICON\\空气质量优状态.png",
+                out airQualityLabel, out airQualityIconPictureBox));
+            _cards.Add(CreateSensorCard("窗户", "", "关闭", darkColor, txtFont, "ICON\\窗户-关状态.png",
+                out servoLabel, out windowIconPictureBox));
+            _cards.Add(CreateSensorCard("风扇", "", "关闭", darkColor, txtFont, "ICON\\风扇-关状态.png",
+                out motorLabel, out fanIconPictureBox));
+            _cards.Add(CreateSensorCard("蜂鸣器", "", "静音", darkColor, txtFont, "ICON\\蜂鸣器-关状态.png",
+                out buzzerLabel, out buzzerIconPictureBox));
 
-            // 湿度图标
-            humIconPictureBox = new PictureBox
-            {
-                Location = new Point(120, 30),
-                Size = new Size(35, 35),
-                SizeMode = PictureBoxSizeMode.Zoom,
-                Image = LoadIconSafely("ICON\\湿度.png")
-            };
+            this.Controls.Add(cardsPanel);
+        }
 
-            // 湿度显示
-            Label humTitleLabel = new Label
-            {
-                Location = new Point(160, 10),
-                AutoSize = true,
-                Text = "湿度",
-                Font = new Font("微软雅黑", 9F),
-                ForeColor = darkColor
-            };
-
-            humLabel = new Label
-            {
-                Location = new Point(160, 30),
-                Size = new Size(70, 30),
-                Text = "--.-",
-                Font = new Font("Arial", 18F, FontStyle.Bold),
-                ForeColor = primaryColor,
-                TextAlign = ContentAlignment.MiddleLeft
-            };
-
-            humUnitLabel = new Label
-            {
-                Location = new Point(160, 60),
-                AutoSize = true,
-                Text = "%",
-                Font = new Font("Arial", 10F),
-                ForeColor = primaryColor
-            };
-
-            // 土壤湿度图标
-            waterIconPictureBox = new PictureBox
-            {
-                Location = new Point(230, 30),
-                Size = new Size(35, 35),
-                SizeMode = PictureBoxSizeMode.Zoom,
-                Image = LoadIconSafely("ICON\\水位.png")
-            };
-
-            // 土壤湿度显示
-            Label waterTitleLabel = new Label
-            {
-                Location = new Point(270, 10),
-                AutoSize = true,
-                Text = "土壤湿度",
-                Font = new Font("微软雅黑", 9F),
-                ForeColor = darkColor
-            };
-
-            waterLabel = new Label
-            {
-                Location = new Point(270, 30),
-                Size = new Size(70, 30),
-                Text = "--",
-                Font = new Font("Arial", 18F, FontStyle.Bold),
-                ForeColor = Color.FromArgb(255, 152, 0),
-                TextAlign = ContentAlignment.MiddleLeft
-            };
-
-            Label waterUnitLabel = new Label
-            {
-                Location = new Point(270, 60),
-                AutoSize = true,
-                Text = "%",
-                Font = new Font("Arial", 10F),
-                ForeColor = Color.FromArgb(255, 152, 0)
-            };
-
-            // 光照强度图标
-            lightIconPictureBox = new PictureBox
-            {
-                Location = new Point(340, 30),
-                Size = new Size(35, 35),
-                SizeMode = PictureBoxSizeMode.Zoom,
-                Image = LoadIconSafely("ICON\\光照.png")
-            };
-
-            // 光照强度显示
-            Label lightTitleLabel = new Label
-            {
-                Location = new Point(380, 10),
-                AutoSize = true,
-                Text = "光照",
-                Font = new Font("微软雅黑", 9F),
-                ForeColor = darkColor
-            };
-
-            lightLabel = new Label
-            {
-                Location = new Point(380, 30),
-                Size = new Size(70, 30),
-                Text = "--",
-                Font = new Font("Arial", 18F, FontStyle.Bold),
-                ForeColor = Color.FromArgb(255, 193, 7),
-                TextAlign = ContentAlignment.MiddleLeft
-            };
-
-            Label lightUnitLabel = new Label
-            {
-                Location = new Point(380, 60),
-                AutoSize = true,
-                Text = "%",
-                Font = new Font("Arial", 10F),
-                ForeColor = Color.FromArgb(255, 193, 7)
-            };
-
-            // 空气质量图标
-            airQualityIconPictureBox = new PictureBox
-            {
-                Location = new Point(450, 30),
-                Size = new Size(35, 35),
-                SizeMode = PictureBoxSizeMode.Zoom,
-                Image = LoadIconSafely("ICON\\空气质量优状态.png")
-            };
-
-            // 空气质量显示
-            Label airQualityTitleLabel = new Label
-            {
-                Location = new Point(490, 10),
-                AutoSize = true,
-                Text = "空气",
-                Font = new Font("微软雅黑", 9F),
-                ForeColor = darkColor
-            };
-
-            airQualityLabel = new Label
-            {
-                Location = new Point(490, 30),
-                Size = new Size(70, 30),
-                Text = "nice",
-                Font = new Font("Arial", 16F, FontStyle.Bold),
-                ForeColor = successColor,
-                TextAlign = ContentAlignment.MiddleLeft
-            };
-
-            // 窗户图标（原舵机）
-            windowIconPictureBox = new PictureBox
-            {
-                Location = new Point(560, 30),
-                Size = new Size(35, 35),
-                SizeMode = PictureBoxSizeMode.Zoom,
-                Image = LoadIconSafely("ICON\\窗户-关状态.png")
-            };
-
-            // 窗户状态显示
-            Label windowTitleLabel = new Label
-            {
-                Location = new Point(600, 10),
-                AutoSize = true,
-                Text = "窗户",
-                Font = new Font("微软雅黑", 9F),
-                ForeColor = darkColor
-            };
-
-            servoLabel = new Label
-            {
-                Location = new Point(600, 35),
-                Size = new Size(70, 25),
-                Text = "关闭",
-                Font = new Font("微软雅黑", 12F, FontStyle.Bold),
-                ForeColor = darkColor,
-                TextAlign = ContentAlignment.MiddleLeft
-            };
-
-            // 风扇图标（原电机）
-            fanIconPictureBox = new PictureBox
-            {
-                Location = new Point(670, 30),
-                Size = new Size(35, 35),
-                SizeMode = PictureBoxSizeMode.Zoom,
-                Image = LoadIconSafely("ICON\\风扇-关状态.png")
-            };
-
-            // 风扇状态显示
-            Label fanTitleLabel = new Label
-            {
-                Location = new Point(710, 10),
-                AutoSize = true,
-                Text = "风扇",
-                Font = new Font("微软雅黑", 9F),
-                ForeColor = darkColor
-            };
-
-            motorLabel = new Label
-            {
-                Location = new Point(710, 35),
-                Size = new Size(70, 25),
-                Text = "关闭",
-                Font = new Font("微软雅黑", 12F, FontStyle.Bold),
-                ForeColor = darkColor,
-                TextAlign = ContentAlignment.MiddleLeft
-            };
-
-            // 蜂鸣器图标
-            buzzerIconPictureBox = new PictureBox
-            {
-                Location = new Point(780, 30),
-                Size = new Size(35, 35),
-                SizeMode = PictureBoxSizeMode.Zoom,
-                Image = LoadIconSafely("ICON\\蜂鸣器-关状态.png")
-            };
-
-            // 蜂鸣器状态显示
-            Label buzzerTitleLabel = new Label
-            {
-                Location = new Point(820, 10),
-                AutoSize = true,
-                Text = "蜂鸣器",
-                Font = new Font("微软雅黑", 9F),
-                ForeColor = darkColor
-            };
-
-            Label buzzerLabel = new Label
-            {
-                Location = new Point(820, 35),
-                Size = new Size(60, 25),
-                Text = "关闭",
-                Font = new Font("微软雅黑", 12F, FontStyle.Bold),
-                ForeColor = darkColor,
-                TextAlign = ContentAlignment.MiddleLeft
-            };
-
-            dataPanel.Controls.AddRange(new Control[] {
-                tempIconPictureBox, tempTitleLabel, tempLabel, tempUnitLabel,
-                humIconPictureBox, humTitleLabel, humLabel, humUnitLabel,
-                waterIconPictureBox, waterTitleLabel, waterLabel, waterUnitLabel,
-                lightIconPictureBox, lightTitleLabel, lightLabel, lightUnitLabel,
-                airQualityIconPictureBox, airQualityTitleLabel, airQualityLabel,
-                windowIconPictureBox, windowTitleLabel, servoLabel,
-                fanIconPictureBox, fanTitleLabel, motorLabel,
-                buzzerIconPictureBox, buzzerTitleLabel, buzzerLabel
-            });
-
-            // ========== 控制面板 ==========
-            Panel controlDevicePanel = new Panel
-            {
-                Location = new Point(10, 250),
-                Size = new Size(850, 20),
-                BackColor = lightColor,
-                BorderStyle = BorderStyle.None
-            };
-
-            Label controlTitleLabel = new Label
+        /// <summary>
+        /// 创建一张读数卡片: 图标 + 名称 + (单位) + 读数。
+        /// 单位标签按名称的实际像素宽度紧跟在名称右侧, 避免不同字数下重叠或离太远。
+        /// </summary>
+        private CardPanel CreateSensorCard(string title, string unit, string initialValue, Color accent,
+                                           float valueFontSize, string iconFile,
+                                           out Label valueLabel, out PictureBox iconBox)
+        {
+            CardPanel card = new CardPanel
             {
                 Location = new Point(0, 0),
+                Size = new Size(160, CardHeight),
+                Radius = 10,
+                ShowAccent = true,
+                AccentColor = accent
+            };
+
+            iconBox = new PictureBox
+            {
+                Location = new Point(12, (CardHeight - 34) / 2),
+                Size = new Size(34, 34),
+                SizeMode = PictureBoxSizeMode.Zoom,
+                BackColor = Color.Transparent,
+                Image = LoadIconSafely(iconFile)
+            };
+
+            Font titleFont = new Font("微软雅黑", 9F);
+
+            Label titleLabel = new Label
+            {
+                Location = new Point(54, 14),
+                AutoSize = true,
+                Text = title,
+                Font = titleFont,
+                ForeColor = textSecondaryColor,
+                BackColor = Color.Transparent
+            };
+
+            valueLabel = new Label
+            {
+                Location = new Point(52, 33),
+                Size = new Size(100, 34),
+                Text = initialValue,
+                Font = new Font("Arial", valueFontSize, FontStyle.Bold),
+                ForeColor = accent,
+                TextAlign = ContentAlignment.MiddleLeft,
+                BackColor = Color.Transparent
+            };
+
+            card.Controls.Add(iconBox);
+            card.Controls.Add(titleLabel);
+            card.Controls.Add(valueLabel);
+
+            if (!string.IsNullOrEmpty(unit))
+            {
+                int titlePixelWidth = TextRenderer.MeasureText(title, titleFont).Width;
+                Label unitLabel = new Label
+                {
+                    Location = new Point(54 + titlePixelWidth + 4, 17),
+                    AutoSize = true,
+                    Text = unit,
+                    Font = new Font("Arial", 8.5F),
+                    ForeColor = textSecondaryColor,
+                    BackColor = Color.Transparent
+                };
+                card.Controls.Add(unitLabel);
+            }
+
+            cardsPanel.Controls.Add(card);
+            return card;
+        }
+
+        // ========== 设备控制条: 模式切换 + 窗户/风扇手动控制 ==========
+        private void BuildDevicePanel()
+        {
+            devicePanel = new CardPanel
+            {
+                Location = new Point(PadOuter, 0),
+                Size = new Size(this.ClientSize.Width - PadOuter * 2, DeviceHeight),
+                Radius = 12,
+                ShowAccent = true,
+                AccentColor = Color.FromArgb(0, 172, 193)
+            };
+
+            Label deviceTitle = new Label
+            {
+                Location = new Point(20, 22),
                 AutoSize = true,
                 Text = "设备控制",
                 Font = new Font("微软雅黑", 10F, FontStyle.Bold),
-                ForeColor = darkColor
+                ForeColor = darkColor,
+                BackColor = Color.Transparent
             };
 
             modeStatusLabel = new Label
             {
-                Location = new Point(100, 2),
+                Location = new Point(96, 24),
                 AutoSize = true,
                 Text = "● 自动模式",
                 Font = new Font("微软雅黑", 9F),
-                ForeColor = successColor
+                ForeColor = successColor,
+                BackColor = Color.Transparent
             };
 
-            modeAutoButton = CreateStyledButton("自动模式", new Point(200, -2), new Size(80, 24), successColor);
+            modeAutoButton = CreateStyledButton("自动模式", new Point(212, 17), new Size(90, 30), successColor);
             modeAutoButton.Click += ModeAutoButton_Click;
 
-            modeManualButton = CreateStyledButton("手动模式", new Point(290, -2), new Size(80, 24), warningColor);
+            modeManualButton = CreateStyledButton("手动模式", new Point(310, 17), new Size(90, 30), warningColor);
             modeManualButton.Click += ModeManualButton_Click;
 
-            servoOffButton = CreateStyledButton("窗户关", new Point(400, -2), new Size(70, 24), primaryColor);
+            servoOffButton = CreateStyledButton("窗户关", new Point(430, 17), new Size(84, 30), primaryColor);
             servoOffButton.Click += ServoOffButton_Click;
             servoOffButton.Enabled = false;
 
-            servoOnButton = CreateStyledButton("窗户开", new Point(480, -2), new Size(70, 24), primaryColor);
+            servoOnButton = CreateStyledButton("窗户开", new Point(522, 17), new Size(84, 30), primaryColor);
             servoOnButton.Click += ServoOnButton_Click;
             servoOnButton.Enabled = false;
 
-            motorOffButton = CreateStyledButton("风扇关", new Point(580, -2), new Size(70, 24), primaryColor);
+            motorOffButton = CreateStyledButton("风扇关", new Point(640, 17), new Size(84, 30), primaryColor);
             motorOffButton.Click += MotorOffButton_Click;
             motorOffButton.Enabled = false;
 
-            motorOnButton = CreateStyledButton("风扇开", new Point(660, -2), new Size(70, 24), primaryColor);
+            motorOnButton = CreateStyledButton("风扇开", new Point(732, 17), new Size(84, 30), primaryColor);
             motorOnButton.Click += MotorOnButton_Click;
             motorOnButton.Enabled = false;
 
-            controlDevicePanel.Controls.AddRange(new Control[] {
-                controlTitleLabel, modeStatusLabel,
+            Label deviceHint = new Label
+            {
+                Name = "deviceHintLabel",
+                Location = new Point(0, 22),
+                AutoSize = false,
+                Size = new Size(340, 20),
+                Text = "提示: 切换到手动模式后, 窗户/风扇按钮才可操作",
+                Font = new Font("微软雅黑", 8.5F),
+                ForeColor = textSecondaryColor,
+                TextAlign = ContentAlignment.MiddleRight,
+                BackColor = Color.Transparent
+            };
+
+            devicePanel.Controls.AddRange(new Control[] {
+                deviceTitle, modeStatusLabel,
                 modeAutoButton, modeManualButton,
                 servoOffButton, servoOnButton,
-                motorOffButton, motorOnButton
+                motorOffButton, motorOnButton, deviceHint
             });
 
-            // ========== 图表面板 ==========
-            Label chartLabel = new Label
+            this.Controls.Add(devicePanel);
+        }
+
+        // ========== 图表 + 日志 (并排, 宽度按 58 : 42 分配) ==========
+        private void BuildChartAndLog()
+        {
+            chartLabel = new Label
             {
-                Location = new Point(10, 280),
+                Location = new Point(PadOuter + 4, 0),
                 AutoSize = true,
-                Text = "历史数据图表 (最近100组数据)",
+                Text = "历史数据趋势 (最近 100 组)",
                 Font = new Font("微软雅黑", 10F, FontStyle.Bold),
-                ForeColor = darkColor
+                ForeColor = darkColor,
+                BackColor = Color.Transparent
+            };
+
+            logLabel = new Label
+            {
+                Location = new Point(0, 0),
+                AutoSize = true,
+                Text = "运行日志",
+                Font = new Font("微软雅黑", 10F, FontStyle.Bold),
+                ForeColor = darkColor,
+                BackColor = Color.Transparent
+            };
+
+            autoScrollCheckBox = new CheckBox
+            {
+                Location = new Point(0, 2),
+                AutoSize = true,
+                Text = "自动滚动",
+                Font = new Font("微软雅黑", 9F),
+                Checked = true,
+                BackColor = Color.Transparent
             };
 
             chartPanel = new Panel
             {
-                Location = new Point(10, 305),
-                Size = new Size(440, 440),
+                Location = new Point(PadOuter, 0),
+                Size = new Size(700, 380),
                 BackColor = chartBgColor,
                 BorderStyle = BorderStyle.None
             };
             chartPanel.Paint += ChartPanel_Paint;
 
-            // ========== 视频监控面板 ==========
-            videoLabel = new Label
-            {
-                Location = new Point(470, 280),
-                AutoSize = true,
-                Text = "视频监控",
-                Font = new Font("微软雅黑", 10F, FontStyle.Bold),
-                ForeColor = darkColor
-            };
-
-            videoPictureBox = new PictureBox
-            {
-                Location = new Point(470, 305),
-                Size = new Size(320, 240),
-                BackColor = Color.Black,
-                BorderStyle = BorderStyle.FixedSingle,
-                SizeMode = PictureBoxSizeMode.Zoom
-            };
-
-            Label videoIpLabel = new Label
-            {
-                Location = new Point(470, 555),
-                AutoSize = true,
-                Text = "ESP32地址:",
-                Font = new Font("微软雅黑", 9F),
-                ForeColor = darkColor
-            };
-
-            videoIpTextBox = new TextBox
-            {
-                Location = new Point(545, 553),
-                Width = 180,
-                Text = "http://192.168.1.100",
-                Font = new Font("微软雅黑", 9F)
-            };
-
-            videoConnectButton = CreateStyledButton("连接", new Point(470, 585), new Size(70, 27), successColor);
-            videoConnectButton.Click += VideoConnectButton_Click;
-
-            videoDisconnectButton = CreateStyledButton("断开", new Point(550, 585), new Size(70, 27), dangerColor);
-            videoDisconnectButton.Click += VideoDisconnectButton_Click;
-            videoDisconnectButton.Enabled = false;
-
-            videoStatusLabel = new Label
-            {
-                Location = new Point(630, 590),
-                AutoSize = true,
-                Text = "● 未连接",
-                Font = new Font("微软雅黑", 9F, FontStyle.Bold),
-                ForeColor = Color.Gray
-            };
-
-            // ========== 日志面板 ==========
-            logLabel = new Label
-            {
-                Location = new Point(940, 130),
-                AutoSize = true,
-                Text = "接收日志",
-                Font = new Font("微软雅黑", 10F, FontStyle.Bold),
-                ForeColor = darkColor
-            };
-
-            autoScrollCheckBox = new CheckBox
-            {
-                Location = new Point(1240, 130),
-                AutoSize = true,
-                Text = "自动滚动",
-                Font = new Font("微软雅黑", 9F),
-                Checked = true
-            };
-
             logTextBox = new TextBox
             {
-                Location = new Point(940, 155),
-                Size = new Size(370, 520),
+                Location = new Point(0, 0),
+                Size = new Size(520, 380),
                 Multiline = true,
                 ReadOnly = true,
                 ScrollBars = ScrollBars.Vertical,
@@ -823,17 +685,188 @@ namespace DHT11
                 BorderStyle = BorderStyle.FixedSingle
             };
 
-            // 添加所有控件到窗体
             this.Controls.AddRange(new Control[] {
-                controlPanel, dataPanel,
-                controlDevicePanel, chartLabel, chartPanel,
-                videoLabel, videoIpLabel, videoIpTextBox, videoConnectButton, videoDisconnectButton,
-                videoStatusLabel, videoPictureBox,
-                logLabel, autoScrollCheckBox, logTextBox
+                chartLabel, chartPanel, logLabel, autoScrollCheckBox, logTextBox
             });
+        }
 
-            this.ResumeLayout(false);
-            this.PerformLayout();
+        /// <summary>
+        /// 按当前客户区尺寸重算所有区块的位置。构造完成后调用一次, 之后每次 Resize 调用。
+        /// </summary>
+        private void ApplyResponsiveLayout()
+        {
+            if (headerPanel == null || connectPanel == null || cardsPanel == null || devicePanel == null) return;
+
+            int windowWidth = this.ClientSize.Width;
+            int windowHeight = this.ClientSize.Height;
+            int innerWidth = windowWidth - PadOuter * 2;
+
+            // ---------- 1. 标题栏 (右对齐: 头像 + 昵称 + 注销) ----------
+            headerPanel.SetBounds(0, 0, windowWidth, HeaderHeight);
+
+            if (logoutButton != null)
+            {
+                logoutButton.Location = new Point(windowWidth - PadOuter - logoutButton.Width,
+                                                  (HeaderHeight - logoutButton.Height) / 2);
+            }
+            if (avatarPictureBox != null && logoutButton != null)
+            {
+                avatarPictureBox.Location = new Point(logoutButton.Left - 10 - avatarPictureBox.Width,
+                                                      (HeaderHeight - avatarPictureBox.Height) / 2);
+            }
+            if (avatarLabel != null && avatarPictureBox != null)
+            {
+                avatarLabel.Location = new Point(avatarPictureBox.Left - 8 - avatarLabel.Width,
+                                                 (HeaderHeight - avatarLabel.Height) / 2);
+            }
+
+            // ---------- 2. 连接配置卡片 ----------
+            int connectTop = HeaderHeight + GapBlock;
+            connectPanel.SetBounds(PadOuter, connectTop, innerWidth, ConnectHeight);
+
+            int cardWidth = connectPanel.Width;
+            if (exportButton != null && clearButton != null)
+            {
+                exportButton.Location = new Point(cardWidth - 16 - exportButton.Width, 34);
+                clearButton.Location = new Point(exportButton.Left - 8 - clearButton.Width, 34);
+            }
+            if (mqttAutoPublishCheckBox != null)
+            {
+                mqttAutoPublishCheckBox.Location = new Point(cardWidth - 16 - mqttAutoPublishCheckBox.Width, 102);
+            }
+
+            // ---------- 3. 卡片行 (等分) ----------
+            int cardsTop = connectTop + ConnectHeight + GapBlock;
+            cardsPanel.SetBounds(PadOuter, cardsTop, innerWidth, CardHeight);
+
+            const int cardGap = 6;
+            int cardCount = _cards.Count;
+            if (cardCount > 0)
+            {
+                int eachWidth = (innerWidth - cardGap * (cardCount - 1)) / cardCount;
+                if (eachWidth < 110) eachWidth = 110;
+                for (int i = 0; i < cardCount; i++)
+                {
+                    _cards[i].SetBounds(i * (eachWidth + cardGap), 0, eachWidth, CardHeight);
+                }
+            }
+
+            // ---------- 4. 设备控制条 ----------
+            int deviceTop = cardsTop + CardHeight + GapBlock;
+            devicePanel.SetBounds(PadOuter, deviceTop, innerWidth, DeviceHeight);
+
+            Control deviceHint = devicePanel.Controls["deviceHintLabel"];
+            if (deviceHint != null)
+            {
+                deviceHint.Location = new Point(devicePanel.Width - 16 - deviceHint.Width, 22);
+            }
+
+            // ---------- 5. 图表 | 日志 ----------
+            int contentTop = deviceTop + DeviceHeight + GapBlock;
+            int labelTop = contentTop;
+            int panelTop = contentTop + SectionLabelHeight;
+            int panelHeight = windowHeight - panelTop - PadOuter;
+            if (panelHeight < 200) panelHeight = 200;
+
+            int available = innerWidth - GapBlock;
+            int chartWidth = (int)(available * 0.58);
+            int logLeft = PadOuter + chartWidth + GapBlock;
+            int logWidth = available - chartWidth;
+
+            if (chartLabel != null) chartLabel.Location = new Point(PadOuter + 4, labelTop + 2);
+            if (logLabel != null) logLabel.Location = new Point(logLeft + 4, labelTop + 2);
+            if (autoScrollCheckBox != null)
+            {
+                autoScrollCheckBox.Location = new Point(logLeft + logWidth - autoScrollCheckBox.Width - 4, labelTop + 2);
+            }
+            if (chartPanel != null) chartPanel.SetBounds(PadOuter, panelTop, chartWidth, panelHeight);
+            if (logTextBox != null) logTextBox.SetBounds(logLeft, panelTop, logWidth, panelHeight);
+
+            if (chartPanel != null) chartPanel.Invalidate();
+        }
+
+        // 标题栏底部 1px 分隔线
+        private void HeaderPanel_Paint(object sender, PaintEventArgs e)
+        {
+            using (Pen pen = new Pen(Color.FromArgb(230, 235, 241), 1))
+            {
+                e.Graphics.DrawLine(pen, 0, headerPanel.Height - 1, headerPanel.Width, headerPanel.Height - 1);
+            }
+        }
+
+        // 连接卡片里两行之间的分隔线
+        private void ConnectPanel_Paint(object sender, PaintEventArgs e)
+        {
+            using (Pen pen = new Pen(Color.FromArgb(238, 241, 246), 1))
+            {
+                e.Graphics.DrawLine(pen, 16, 69, connectPanel.Width - 16, 69);
+            }
+        }
+
+        /// <summary>圆角矩形路径 (卡片绘制用)。</summary>
+        private static GraphicsPath CreateRoundedPath(Rectangle rect, int radius)
+        {
+            GraphicsPath path = new GraphicsPath();
+            int diameter = Math.Max(1, radius * 2);
+            if (diameter > rect.Width) diameter = rect.Width;
+            if (diameter > rect.Height) diameter = rect.Height;
+
+            path.AddArc(rect.X, rect.Y, diameter, diameter, 180, 90);
+            path.AddArc(rect.Right - diameter, rect.Y, diameter, diameter, 270, 90);
+            path.AddArc(rect.Right - diameter, rect.Bottom - diameter, diameter, diameter, 0, 90);
+            path.AddArc(rect.X, rect.Bottom - diameter, diameter, diameter, 90, 90);
+            path.CloseAllFigures();
+            return path;
+        }
+
+        /// <summary>
+        /// 统一卡片外观: 白底 + 圆角 + 1px 描边 + 可选左侧主题色竖条。
+        /// 做成 Panel 子类(而不是给每个 Panel 挂 Paint 事件)是为了打开双缓冲, 消除频繁刷新时的闪烁。
+        /// </summary>
+        private sealed class CardPanel : Panel
+        {
+            private static readonly Color StrokeColor = Color.FromArgb(228, 232, 238);
+
+            public Color AccentColor { get; set; } = Color.Transparent;
+            public int Radius { get; set; } = 10;
+            public bool ShowAccent { get; set; }
+
+            public CardPanel()
+            {
+                SetStyle(ControlStyles.AllPaintingInWmPaint
+                       | ControlStyles.OptimizedDoubleBuffer
+                       | ControlStyles.UserPaint
+                       | ControlStyles.ResizeRedraw, true);
+                BackColor = Color.White;
+            }
+
+            protected override void OnPaint(PaintEventArgs e)
+            {
+                Graphics g = e.Graphics;
+                g.SmoothingMode = SmoothingMode.AntiAlias;
+
+                // 圆角以外的区域先填父容器底色, 否则四角会留下白色直角
+                g.Clear(Parent != null ? Parent.BackColor : Color.White);
+
+                Rectangle rect = new Rectangle(0, 0, Width - 1, Height - 1);
+                using (GraphicsPath path = CreateRoundedPath(rect, Radius))
+                using (SolidBrush fill = new SolidBrush(Color.White))
+                using (Pen border = new Pen(StrokeColor, 1))
+                {
+                    g.FillPath(fill, path);
+                    g.DrawPath(border, path);
+                }
+
+                if (ShowAccent && AccentColor.A != 0)
+                {
+                    using (SolidBrush accent = new SolidBrush(AccentColor))
+                    {
+                        g.FillRectangle(accent, new Rectangle(2, 16, 3, Math.Max(4, Height - 32)));
+                    }
+                }
+
+                base.OnPaint(e);   // 必须调用, 否则外层挂的 Paint 事件(如 ConnectPanel_Paint)不会触发
+            }
         }
 
         // 创建样式化按钮
@@ -1045,41 +1078,6 @@ namespace DHT11
                 return "空气污染报警";
             else
                 return "正常";
-        }
-
-        // 控制面板绘制边框
-        private void ControlPanel_Paint(object sender, PaintEventArgs e)
-        {
-            Panel panel = sender as Panel;
-            using (Pen pen = new Pen(Color.FromArgb(220, 220, 220), 1))
-            {
-                e.Graphics.DrawLine(pen, 0, panel.Height - 1, panel.Width, panel.Height - 1);
-            }
-        }
-
-        // 数据面板绘制圆角边框
-        private void DataPanel_Paint(object sender, PaintEventArgs e)
-        {
-            Panel panel = sender as Panel;
-            using (Pen pen = new Pen(Color.FromArgb(220, 220, 220), 2))
-            {
-                Rectangle rect = new Rectangle(0, 0, panel.Width - 1, panel.Height - 1);
-                DrawRoundedRectangle(e.Graphics, rect, 8, pen);
-            }
-        }
-
-        // 绘制圆角矩形
-        private void DrawRoundedRectangle(Graphics graphics, Rectangle bounds, int cornerRadius, Pen drawPen)
-        {
-            using (GraphicsPath path = new GraphicsPath())
-            {
-                path.AddArc(bounds.X, bounds.Y, cornerRadius, cornerRadius, 180, 90);
-                path.AddArc(bounds.X + bounds.Width - cornerRadius, bounds.Y, cornerRadius, cornerRadius, 270, 90);
-                path.AddArc(bounds.X + bounds.Width - cornerRadius, bounds.Y + bounds.Height - cornerRadius, cornerRadius, cornerRadius, 0, 90);
-                path.AddArc(bounds.X, bounds.Y + bounds.Height - cornerRadius, cornerRadius, cornerRadius, 90, 90);
-                path.CloseAllFigures();
-                graphics.DrawPath(drawPen, path);
-            }
         }
 
         private void InitializeSerialPort()
@@ -2109,10 +2107,6 @@ namespace DHT11
                     }
                 }
 
-                // 断开视频流(共用 HttpClient 在这里统一释放)
-                try { _videoCancellationToken?.Cancel(); } catch { }
-                try { _videoCancellationToken?.Dispose(); } catch { }
-                try { _videoHttpClient.Dispose(); } catch { }
 
                 // 释放图标缓存(必须在窗体销毁前, 且此时不再有后台线程取用)
                 DisposeIconCache();
@@ -2120,54 +2114,35 @@ namespace DHT11
             catch { }
         }
 
+        // 窗口尺寸变化: 统一交给 ApplyResponsiveLayout 重算全部坐标,
+        // 不再像原实现那样「构造写一套、Resize 改另一套」, 两套数值不一致就会错位。
         private void Form1_Resize(object sender, EventArgs e)
         {
             if (this.WindowState == FormWindowState.Minimized) return;
 
             try
             {
-                // 获取当前窗体的客户区大小
-                int clientWidth = this.ClientSize.Width;
-                int clientHeight = this.ClientSize.Height;
-
-                // 调整图表面板的大小和位置
-                if (chartPanel != null)
-                {
-                    // 保持图表宽度和高度固定
-                    // chartPanel.Width = 440;
-                    // chartPanel.Height = 195;
-                }
-
-                // 调整日志文本框的位置和大小
-                if (logTextBox != null)
-                {
-                    logTextBox.Location = new Point(clientWidth - 410, 155);
-                    logTextBox.Width = 370;
-                    logTextBox.Height = clientHeight - 165;
-                }
-
-                // 调整日志标签位置
-                if (logLabel != null)
-                {
-                    logLabel.Location = new Point(clientWidth - 410, 130);
-                }
-
-                // 调整自动滚动复选框位置
-                if (autoScrollCheckBox != null)
-                {
-                    autoScrollCheckBox.Location = new Point(clientWidth - 110, 130);
-                }
-
-                // 重绘图表
-                if (chartPanel != null)
-                {
-                    chartPanel.Invalidate();
-                }
+                ApplyResponsiveLayout();
             }
             catch { }
         }
 
-        #region MQTT相关方法
+        /// <summary>用户点了顶栏「注销」: 置位后关闭本窗体, Program.cs 会据此回到登录页。</summary>
+        public bool LogoutRequested { get; private set; }
+
+        private void LogoutButton_Click(object sender, EventArgs e)
+        {
+            if (MessageBox.Show("确定要注销当前账号并返回登录页吗?", "注销",
+                    MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes)
+            {
+                return;
+            }
+
+            LogoutRequested = true;
+            this.Close();
+        }
+
+#region MQTT相关方法
 
         // 初始化MQTT客户端
         private void InitializeMqttClient()
@@ -2546,234 +2521,6 @@ namespace DHT11
         private void MotorOnButton_Click(object sender, EventArgs e)
         {
             SendSerialCommand("MOTOR-1");
-        }
-
-        #endregion
-
-        #region 视频监控方法
-
-        // 连接视频流按钮
-        private async void VideoConnectButton_Click(object sender, EventArgs e)
-        {
-            try
-            {
-                if (string.IsNullOrWhiteSpace(videoIpTextBox.Text))
-                {
-                    MessageBox.Show("请输入ESP32摄像头地址!", "提示", MessageBoxButtons.OK, MessageBoxIcon.Warning);
-                    return;
-                }
-
-                string baseUrl = videoIpTextBox.Text.Trim();
-                if (!baseUrl.StartsWith("http://") && !baseUrl.StartsWith("https://"))
-                {
-                    baseUrl = "http://" + baseUrl;
-                }
-
-                // ESP32-CAM的MJPEG流地址通常是 /stream 或 /:81/stream
-                string streamUrl = baseUrl.TrimEnd('/') + "/stream";
-
-                UpdateVideoStatus("连接中...", Color.Orange);
-                LogMessage($"正在连接视频流: {streamUrl}");
-
-                _videoCancellationToken?.Dispose();
-                _videoCancellationToken = new CancellationTokenSource();
-
-                videoConnectButton.Enabled = false;
-                videoDisconnectButton.Enabled = true;
-                videoIpTextBox.Enabled = false;
-
-                // 启动视频流接收任务
-                _ = Task.Run(() => ReceiveVideoStream(streamUrl, _videoCancellationToken.Token));
-            }
-            catch (Exception ex)
-            {
-                UpdateVideoStatus("连接失败", Color.Red);
-                LogMessage($"视频流连接失败: {ex.Message}", Color.Red);
-                MessageBox.Show($"连接视频流失败: {ex.Message}", "错误", MessageBoxButtons.OK, MessageBoxIcon.Error);
-
-                videoConnectButton.Enabled = true;
-                videoDisconnectButton.Enabled = false;
-                videoIpTextBox.Enabled = true;
-            }
-        }
-
-        // 断开视频流按钮
-        private void VideoDisconnectButton_Click(object sender, EventArgs e)
-        {
-            try
-            {
-                // 只取消令牌并清理画面; HttpClient 是共用的, 不能在断开时 Dispose(否则下次连接直接 ObjectDisposedException),
-                // 它只在 FormClosing 里统一释放。
-                _videoCancellationToken?.Cancel();
-                _videoStreaming = false;
-
-                UpdateVideoStatus("未连接", Color.Gray);
-                videoConnectButton.Enabled = true;
-                videoDisconnectButton.Enabled = false;
-                videoIpTextBox.Enabled = true;
-
-                // 修复: 原来直接把 Image 置 null 不 Dispose, 长期连接/断开会把帧缓冲句柄漏光
-                SafeInvoke(delegate
-                {
-                    var oldImage = videoPictureBox.Image;
-                    videoPictureBox.Image = null;
-                    oldImage?.Dispose();
-                });
-
-                LogMessage("视频流已断开");
-            }
-            catch (Exception ex)
-            {
-                LogMessage($"断开视频流失败: {ex.Message}", Color.Red);
-            }
-        }
-
-        // 接收MJPEG视频流
-        private async Task ReceiveVideoStream(string streamUrl, CancellationToken cancellationToken)
-        {
-            try
-            {
-                _videoStreaming = true;
-                using (var response = await _videoHttpClient.GetAsync(streamUrl, HttpCompletionOption.ResponseHeadersRead, cancellationToken))
-                {
-                    response.EnsureSuccessStatusCode();
-
-                    // 连接成功，更新状态
-                    SafeInvoke(delegate
-                    {
-                        UpdateVideoStatus("已连接", Color.Green);
-                        LogMessage("视频流连接成功", Color.Green);
-                    });
-
-                    using (var stream = await response.Content.ReadAsStreamAsync())
-                    {
-                        byte[] buffer = new byte[1024 * 1024]; // 1MB buffer
-                        List<byte> frameBuffer = new List<byte>();
-                        int bytesRead;
-
-                        while (!cancellationToken.IsCancellationRequested && (bytesRead = await stream.ReadAsync(buffer, 0, buffer.Length, cancellationToken)) > 0)
-                        {
-                            for (int i = 0; i < bytesRead; i++)
-                            {
-                                frameBuffer.Add(buffer[i]);
-
-                                // 检测JPEG结束标记 (0xFF 0xD9)
-                                if (frameBuffer.Count >= 2 && frameBuffer[frameBuffer.Count - 2] == 0xFF && frameBuffer[frameBuffer.Count - 1] == 0xD9)
-                                {
-                                    // 找到JPEG起始标记 (0xFF 0xD8)
-                                    int startIndex = -1;
-                                    for (int j = 0; j < frameBuffer.Count - 1; j++)
-                                    {
-                                        if (frameBuffer[j] == 0xFF && frameBuffer[j + 1] == 0xD8)
-                                        {
-                                            startIndex = j;
-                                            break;
-                                        }
-                                    }
-
-                                    if (startIndex >= 0)
-                                    {
-                                        byte[] frameData = frameBuffer.Skip(startIndex).ToArray();
-                                        DisplayFrame(frameData);
-                                        frameBuffer.Clear();
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-            catch (OperationCanceledException)
-            {
-                LogMessage("视频流接收已取消");
-            }
-            catch (HttpRequestException ex)
-            {
-                if (_videoStreaming)
-                {
-                    string errorMsg = ex.Message;
-                    string suggestion = "";
-
-                    if (ex.Message.Contains("404"))
-                    {
-                        suggestion = "\n\n建议尝试以下地址格式：\n" +
-                                   "1. http://IP地址:81/stream\n" +
-                                   "2. http://IP地址\n" +
-                                   "3. http://IP地址/cam-hi.jpg\n" +
-                                   "4. http://IP地址:81";
-                    }
-
-                    LogMessage($"视频流接收错误: {errorMsg}", Color.Red);
-                    SafeInvoke(delegate
-                    {
-                        UpdateVideoStatus("连接失败", Color.Red);
-                        videoConnectButton.Enabled = true;
-                        videoDisconnectButton.Enabled = false;
-                        videoIpTextBox.Enabled = true;
-                        MessageBox.Show($"视频流连接失败: {errorMsg}{suggestion}", "连接错误", MessageBoxButtons.OK, MessageBoxIcon.Error);
-                    });
-                }
-            }
-            catch (Exception ex)
-            {
-                if (_videoStreaming)
-                {
-                    LogMessage($"视频流接收错误: {ex.Message}", Color.Red);
-                    SafeInvoke(delegate
-                    {
-                        UpdateVideoStatus("连接断开", Color.Red);
-                        videoConnectButton.Enabled = true;
-                        videoDisconnectButton.Enabled = false;
-                        videoIpTextBox.Enabled = true;
-                    });
-                }
-            }
-            finally
-            {
-                _videoStreaming = false;
-            }
-        }
-
-        // 显示视频帧
-        private void DisplayFrame(byte[] frameData)
-        {
-            try
-            {
-                // 修复: 原来 Image.FromStream(ms) 写在 using(ms) 里面 —— GDI+ 明确要求"流必须在 Image 生命周期内保持打开",
-                //       而 PictureBox 是之后才绘制的, 属于踩文档红线(偶发"参数无效"/半幅画面)。
-                //       这里先把像素复制到独立的 Bitmap, 解码完立刻关流。
-                Bitmap image = null;
-                using (var ms = new MemoryStream(frameData))
-                using (var decoded = Image.FromStream(ms))
-                {
-                    image = new Bitmap(decoded);
-                }
-
-                if (!SafeInvoke(delegate
-                {
-                    var oldImage = videoPictureBox.Image;
-                    videoPictureBox.Image = image;
-                    oldImage?.Dispose();
-                }))
-                {
-                    image.Dispose();   // 窗口已关闭, 画面没交出去, 立即回收
-                }
-            }
-            catch (Exception ex)
-            {
-                System.Diagnostics.Debug.WriteLine($"显示帧错误: {ex.Message}");
-            }
-        }
-
-        // 更新视频连接状态标签
-        private void UpdateVideoStatus(string status, Color color)
-        {
-            // 修复: 同 UpdateMqttStatus, 改为 SafeInvoke 避免关窗期间抛异常。
-            SafeInvoke(delegate
-            {
-                videoStatusLabel.Text = "● " + status;
-                videoStatusLabel.ForeColor = color;
-            });
         }
 
         #endregion
