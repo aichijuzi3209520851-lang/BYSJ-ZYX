@@ -351,6 +351,8 @@ int main(void)
             printf("Air:%s\r\n", air_status);  // 无报警时正常打印
         }
 
+        OLED_DisplayOn();  // 显示保活: 防供电瞬断/干扰导致的灭屏(自动救回)
+
         Delay_ms(1500);  // 1.5秒读取一次
     }
 }

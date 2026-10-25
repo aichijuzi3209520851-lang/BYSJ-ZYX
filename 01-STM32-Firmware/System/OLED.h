@@ -15,6 +15,7 @@
 #define __OLED_H
 
 void OLED_Init(void);
+void OLED_DisplayOn(void);   /* 显示保活: 重发充电泵+显示开(防供电瞬断/干扰误关后灭屏) */
 void OLED_Clear(void);
 void OLED_ShowChar(uint8_t Line, uint8_t Column, char Char);
 void OLED_ShowString(uint8_t Line, uint8_t Column, char *String);

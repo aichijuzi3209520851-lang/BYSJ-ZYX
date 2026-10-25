@@ -124,6 +124,21 @@ void OLED_SetCursor(uint8_t Y, uint8_t X)
   * @param  无
   * @retval 无
   */
+/**
+  * @brief  显示保活: 重发充电泵开启与显示开启命令
+  * @param  无
+  * @retval 无
+  * @note   SSD1306无自动熄屏功能, 灭屏只可能是供电瞬断(掉电复位后显示关/充电泵关)
+  *         或I2C线被干扰误注入0xAE。主循环周期调用本函数即可自动救回,
+  *         彻底解决仍需改善供电(建议OLED改接3.3V/GND电源排针+独立USB供电)
+  */
+void OLED_DisplayOn(void)
+{
+	OLED_WriteCommand(0x8D);	//充电泵设置
+	OLED_WriteCommand(0x14);	//开启充电泵
+	OLED_WriteCommand(0xAF);	//开启显示
+}
+
 void OLED_Clear(void)
 {  
 	uint8_t i, j;
