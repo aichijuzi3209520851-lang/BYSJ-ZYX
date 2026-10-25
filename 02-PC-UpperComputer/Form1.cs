@@ -24,6 +24,7 @@ namespace DHT11
         private List<double> _tempHistory = new List<double>();
         private List<double> _humHistory = new List<double>();
         private List<double> _waterHistory = new List<double>();  // 土壤湿度历史数据
+        private List<double> _lightHistory = new List<double>();  // 光照强度历史数据
         private List<string> _timestampHistory = new List<string>();
         private List<string> _alarmTypeHistory = new List<string>();
         private List<string> _airQualityHistory = new List<string>();  // 空气质量历史
@@ -58,7 +59,9 @@ namespace DHT11
         private Label servoLabel;
         private Label motorLabel;
         private Label airQualityLabel;
+        private Label lightLabel;
         private PictureBox waterIconPictureBox;
+        private PictureBox lightIconPictureBox;
         private PictureBox airQualityIconPictureBox;
         private PictureBox windowIconPictureBox;  // 窗户图标
         private PictureBox fanIconPictureBox;     // 风扇图标
@@ -121,6 +124,7 @@ namespace DHT11
 
         // 新增数据字段
         private int _waterLevel = 0;
+        private int _lightLevel = 0;  // 光照强度百分比(固件 Light:%d%% 字段)
         private string _servoStatus = "OFF";
         private string _motorStatus = "OFF";
         private string _airQuality = "nice";
@@ -370,7 +374,7 @@ namespace DHT11
             Panel dataPanel = new Panel
             {
                 Location = new Point(10, 130),
-                Size = new Size(850, 110),
+                Size = new Size(920, 110),
                 BackColor = Color.White,
                 BorderStyle = BorderStyle.None
             };
@@ -490,10 +494,48 @@ namespace DHT11
                 ForeColor = Color.FromArgb(255, 152, 0)
             };
 
+            // 光照强度图标
+            lightIconPictureBox = new PictureBox
+            {
+                Location = new Point(340, 30),
+                Size = new Size(35, 35),
+                SizeMode = PictureBoxSizeMode.Zoom,
+                Image = LoadIconSafely("ICON\\光照.png")
+            };
+
+            // 光照强度显示
+            Label lightTitleLabel = new Label
+            {
+                Location = new Point(380, 10),
+                AutoSize = true,
+                Text = "光照",
+                Font = new Font("微软雅黑", 9F),
+                ForeColor = darkColor
+            };
+
+            lightLabel = new Label
+            {
+                Location = new Point(380, 30),
+                Size = new Size(70, 30),
+                Text = "--",
+                Font = new Font("Arial", 18F, FontStyle.Bold),
+                ForeColor = Color.FromArgb(255, 193, 7),
+                TextAlign = ContentAlignment.MiddleLeft
+            };
+
+            Label lightUnitLabel = new Label
+            {
+                Location = new Point(380, 60),
+                AutoSize = true,
+                Text = "%",
+                Font = new Font("Arial", 10F),
+                ForeColor = Color.FromArgb(255, 193, 7)
+            };
+
             // 空气质量图标
             airQualityIconPictureBox = new PictureBox
             {
-                Location = new Point(340, 30),
+                Location = new Point(450, 30),
                 Size = new Size(35, 35),
                 SizeMode = PictureBoxSizeMode.Zoom,
                 Image = LoadIconSafely("ICON\\空气质量优状态.png")
@@ -502,7 +544,7 @@ namespace DHT11
             // 空气质量显示
             Label airQualityTitleLabel = new Label
             {
-                Location = new Point(380, 10),
+                Location = new Point(490, 10),
                 AutoSize = true,
                 Text = "空气",
                 Font = new Font("微软雅黑", 9F),
@@ -511,7 +553,7 @@ namespace DHT11
 
             airQualityLabel = new Label
             {
-                Location = new Point(380, 30),
+                Location = new Point(490, 30),
                 Size = new Size(70, 30),
                 Text = "nice",
                 Font = new Font("Arial", 16F, FontStyle.Bold),
@@ -522,7 +564,7 @@ namespace DHT11
             // 窗户图标（原舵机）
             windowIconPictureBox = new PictureBox
             {
-                Location = new Point(450, 30),
+                Location = new Point(560, 30),
                 Size = new Size(35, 35),
                 SizeMode = PictureBoxSizeMode.Zoom,
                 Image = LoadIconSafely("ICON\\窗户-关状态.png")
@@ -531,7 +573,7 @@ namespace DHT11
             // 窗户状态显示
             Label windowTitleLabel = new Label
             {
-                Location = new Point(490, 10),
+                Location = new Point(600, 10),
                 AutoSize = true,
                 Text = "窗户",
                 Font = new Font("微软雅黑", 9F),
@@ -540,7 +582,7 @@ namespace DHT11
 
             servoLabel = new Label
             {
-                Location = new Point(490, 35),
+                Location = new Point(600, 35),
                 Size = new Size(70, 25),
                 Text = "关闭",
                 Font = new Font("微软雅黑", 12F, FontStyle.Bold),
@@ -551,7 +593,7 @@ namespace DHT11
             // 风扇图标（原电机）
             fanIconPictureBox = new PictureBox
             {
-                Location = new Point(560, 30),
+                Location = new Point(670, 30),
                 Size = new Size(35, 35),
                 SizeMode = PictureBoxSizeMode.Zoom,
                 Image = LoadIconSafely("ICON\\风扇-关状态.png")
@@ -560,7 +602,7 @@ namespace DHT11
             // 风扇状态显示
             Label fanTitleLabel = new Label
             {
-                Location = new Point(600, 10),
+                Location = new Point(710, 10),
                 AutoSize = true,
                 Text = "风扇",
                 Font = new Font("微软雅黑", 9F),
@@ -569,7 +611,7 @@ namespace DHT11
 
             motorLabel = new Label
             {
-                Location = new Point(600, 35),
+                Location = new Point(710, 35),
                 Size = new Size(70, 25),
                 Text = "关闭",
                 Font = new Font("微软雅黑", 12F, FontStyle.Bold),
@@ -580,7 +622,7 @@ namespace DHT11
             // 蜂鸣器图标
             buzzerIconPictureBox = new PictureBox
             {
-                Location = new Point(670, 30),
+                Location = new Point(780, 30),
                 Size = new Size(35, 35),
                 SizeMode = PictureBoxSizeMode.Zoom,
                 Image = LoadIconSafely("ICON\\蜂鸣器-关状态.png")
@@ -589,7 +631,7 @@ namespace DHT11
             // 蜂鸣器状态显示
             Label buzzerTitleLabel = new Label
             {
-                Location = new Point(710, 10),
+                Location = new Point(820, 10),
                 AutoSize = true,
                 Text = "蜂鸣器",
                 Font = new Font("微软雅黑", 9F),
@@ -598,7 +640,7 @@ namespace DHT11
 
             Label buzzerLabel = new Label
             {
-                Location = new Point(710, 35),
+                Location = new Point(820, 35),
                 Size = new Size(60, 25),
                 Text = "关闭",
                 Font = new Font("微软雅黑", 12F, FontStyle.Bold),
@@ -610,6 +652,7 @@ namespace DHT11
                 tempIconPictureBox, tempTitleLabel, tempLabel, tempUnitLabel,
                 humIconPictureBox, humTitleLabel, humLabel, humUnitLabel,
                 waterIconPictureBox, waterTitleLabel, waterLabel, waterUnitLabel,
+                lightIconPictureBox, lightTitleLabel, lightLabel, lightUnitLabel,
                 airQualityIconPictureBox, airQualityTitleLabel, airQualityLabel,
                 windowIconPictureBox, windowTitleLabel, servoLabel,
                 fanIconPictureBox, fanTitleLabel, motorLabel,
@@ -1000,6 +1043,8 @@ namespace DHT11
         {
             _tempHistory.Clear();
             _humHistory.Clear();
+            _waterHistory.Clear();
+            _lightHistory.Clear();
         }
 
         private void LoadAvailablePorts()
@@ -1121,6 +1166,7 @@ namespace DHT11
             _tempHistory.Clear();
             _humHistory.Clear();
             _waterHistory.Clear();
+            _lightHistory.Clear();
             _timestampHistory.Clear();
             _alarmTypeHistory.Clear();
             _airQualityHistory.Clear();
@@ -1128,6 +1174,8 @@ namespace DHT11
             _motorStatusHistory.Clear();
             tempLabel.Text = "--.-";
             humLabel.Text = "--.-";
+            waterLabel.Text = "--";
+            lightLabel.Text = "--";
             chartPanel.Invalidate();
             LogMessage("已清空历史数据");
         }
@@ -1152,7 +1200,7 @@ namespace DHT11
                         using (StreamWriter sw = new StreamWriter(sfd.FileName, false, Encoding.UTF8))
                         {
                             // 写入CSV标题行
-                            sw.WriteLine("序号,温度(°C),湿度(%),土壤湿度(%),空气质量,窗户状态,风扇状态,报警类型,时间戳");
+                            sw.WriteLine("序号,温度(°C),湿度(%),土壤湿度(%),光照(%),空气质量,窗户状态,风扇状态,报警类型,时间戳");
 
                             // 写入数据行
                             for (int i = 0; i < _tempHistory.Count; i++)
@@ -1163,8 +1211,9 @@ namespace DHT11
                                 string servoStatus = i < _servoStatusHistory.Count ? _servoStatusHistory[i] : "";
                                 string motorStatus = i < _motorStatusHistory.Count ? _motorStatusHistory[i] : "";
                                 double waterLevel = i < _waterHistory.Count ? _waterHistory[i] : 0;
+                                double lightLevel = i < _lightHistory.Count ? _lightHistory[i] : 0;
 
-                                sw.WriteLine($"{i + 1},{_tempHistory[i]:F1},{_humHistory[i]:F1},{waterLevel:F0},{airQuality},{servoStatus},{motorStatus},{alarmType},{timestamp}");
+                                sw.WriteLine($"{i + 1},{_tempHistory[i]:F1},{_humHistory[i]:F1},{waterLevel:F0},{lightLevel:F0},{airQuality},{servoStatus},{motorStatus},{alarmType},{timestamp}");
                             }
                         }
                         LogMessage($"数据已导出到: {sfd.FileName}");
@@ -1243,6 +1292,7 @@ namespace DHT11
                         tempLabel.Text = $"{p.Temp:F1}";
                         humLabel.Text = $"{p.Hum:F1}";
                         waterLabel.Text = $"{_waterLevel}";
+                        lightLabel.Text = $"{_lightLevel}";
                         airQualityLabel.Text = $"{_airQuality}";
                         servoLabel.Text = _servoStatus == "ON" ? "开启" : "关闭";
                         motorLabel.Text = _motorStatus == "ON" ? "开启" : "关闭";
@@ -1309,7 +1359,7 @@ namespace DHT11
                         // 添加到图表，包含时间戳和报警类型
                         AddToChart(p.Temp, p.Hum, _waterLevel, timestamp, alarmType);
                         chartPanel.Invalidate();
-                        LogMessage($"解析成功: 温度={p.Temp:F1}°C, 湿度={p.Hum:F1}%, 土壤湿度={_waterLevel}%", Color.Green);
+                        LogMessage($"解析成功: 温度={p.Temp:F1}°C, 湿度={p.Hum:F1}%, 土壤湿度={_waterLevel}%, 光照={_lightLevel}%", Color.Green);
 
                         // 检查报警状态
                         UpdateAlarmStatus(p.Temp, p.Hum);
@@ -1380,6 +1430,13 @@ namespace DHT11
                     _waterLevel = int.Parse(waterMatch.Groups[1].Value);
                 }
 
+                // 解析光照强度: Light:XX%(固件 Light_GetPercent 输出)
+                var lightMatch = Regex.Match(data, @"Light:(\d+)%");
+                if (lightMatch.Success)
+                {
+                    _lightLevel = int.Parse(lightMatch.Groups[1].Value);
+                }
+
                 // 解析舵机状态: Servo:ON/OFF
                 var servoMatch = Regex.Match(data, @"Servo:(ON|OFF)");
                 if (servoMatch.Success)
@@ -1415,6 +1472,7 @@ namespace DHT11
             _tempHistory.Add(temp);
             _humHistory.Add(hum);
             _waterHistory.Add(water);
+            _lightHistory.Add(_lightLevel);
             _timestampHistory.Add(timestamp);
             _alarmTypeHistory.Add(alarmType);
             _airQualityHistory.Add(_airQuality);
@@ -1425,6 +1483,7 @@ namespace DHT11
                 _tempHistory.RemoveAt(0);
                 _humHistory.RemoveAt(0);
                 _waterHistory.RemoveAt(0);
+                _lightHistory.RemoveAt(0);
                 _timestampHistory.RemoveAt(0);
                 _alarmTypeHistory.RemoveAt(0);
                 _airQualityHistory.RemoveAt(0);
@@ -1518,6 +1577,8 @@ namespace DHT11
                 DrawHumiditySeries(g, _humHistory, left, top, right, bottom);
             if (_waterHistory.Count > 1)
                 DrawWaterSeries(g, _waterHistory, left, top, right, bottom);
+            if (_lightHistory.Count > 1)
+                DrawLightSeries(g, _lightHistory, left, top, right, bottom);
 
             // 绘制图例
             DrawLegend(g, right - 150, top);
@@ -1751,6 +1812,49 @@ namespace DHT11
             }
         }
 
+        private void DrawLightSeries(Graphics g, List<double> data, int left, int top, int right, int bottom)
+        {
+            int count = data.Count;
+            if (count < 1) return;
+
+            float width = right - left;
+            float height = bottom - top;
+            float xStep = count > 1 ? width / (count - 1) : 0;
+
+            Color lightColor = Color.FromArgb(255, 152, 0);  // 橙色(与土壤湿度黄色区分)
+            using (var pen = new Pen(lightColor, 3))
+            using (var shadowPen = new Pen(Color.FromArgb(50, lightColor), 5))
+            {
+                pen.LineJoin = LineJoin.Round;
+
+                PointF? prev = null;
+                for (int i = 0; i < count; i++)
+                {
+                    float x = left + i * xStep;
+                    double v = data[i];
+
+                    // 映射到 0-100% 范围（与湿度共用Y轴）
+                    float ratio = (float)(v / 100.0);
+                    if (ratio < 0) ratio = 0;
+                    if (ratio > 1) ratio = 1;
+
+                    float y = bottom - ratio * height;
+                    var cur = new PointF(x, y);
+
+                    if (prev.HasValue)
+                    {
+                        g.DrawLine(shadowPen, prev.Value, cur);  // 阴影
+                        g.DrawLine(pen, prev.Value, cur);         // 主线
+                    }
+
+                    // 绘制数据点
+                    g.FillEllipse(new SolidBrush(lightColor), x - 3, y - 3, 6, 6);
+
+                    prev = cur;
+                }
+            }
+        }
+
         private void DrawLegend(Graphics g, int x, int y)
         {
             using (var font = new Font("微软雅黑", 9F))
@@ -1770,6 +1874,12 @@ namespace DHT11
                 g.DrawLine(new Pen(waterColor, 3), x, y + 45, x + 30, y + 45);
                 g.FillEllipse(new SolidBrush(waterColor), x + 12, y + 42, 6, 6);
                 g.DrawString("土壤湿度", font, new SolidBrush(waterColor), x + 35, y + 40);
+
+                // 光照图例
+                Color lightColor = Color.FromArgb(255, 152, 0);
+                g.DrawLine(new Pen(lightColor, 3), x, y + 65, x + 30, y + 65);
+                g.FillEllipse(new SolidBrush(lightColor), x + 12, y + 62, 6, 6);
+                g.DrawString("光照", font, new SolidBrush(lightColor), x + 35, y + 60);
             }
         }
 
@@ -1991,6 +2101,7 @@ namespace DHT11
     ""temperature"": {temperature},
     ""humidity"": {humidity},
     ""soilMoisture"": {_waterLevel},
+    ""lightPercent"": {_lightLevel},
     ""airQuality"": ""{_airQuality}"",
     ""servoStatus"": ""{_servoStatus}"",
     ""motorStatus"": ""{_motorStatus}"",
@@ -2006,7 +2117,7 @@ namespace DHT11
                     .Build();
 
                 await _mqttClient.PublishAsync(message);
-                LogMessage($"[MQTT发送] 温度:{temperature}°C 湿度:{humidity}% 土壤湿度:{_waterLevel}% 空气:{_airQuality} 报警:{alarmType}", Color.Blue);
+                LogMessage($"[MQTT发送] 温度:{temperature}°C 湿度:{humidity}% 土壤湿度:{_waterLevel}% 光照:{_lightLevel}% 空气:{_airQuality} 报警:{alarmType}", Color.Blue);
             }
             catch (Exception ex)
             {
