@@ -347,13 +347,16 @@ uint8_t Handle_Alarms(void)
   *         │Temp:NN C       │  数值列6~7, 单位C列8
   *         │Humi:NN %RH     │  数值列6~7, 单位列8~10
   *         │Soil:NNN% L:NNN%│  土壤6~8/%9, 光照标签11~12/数值13~15/%16
-  *         │Air:nice        │  状态列5~8(Error!占5~10)
+  *         │Air:nice        │  状态列5~8(MQ-2判定, 仅nice/bad两值)
   *         └────────────────┘
+  *
+  *         注意: DHT11读取失败只影响第1/2行数值(显示"--"), 不影响第4行。
+  *         第4行Air完全由MQ-2烟雾传感器(PA6)决定, 与DHT11无关。
   */
 int main(void)
 {
     uint8_t temp_humi_alarm_status;  // 温湿度报警状态(供协议帧附加Warning)
-    uint8_t dht11_ok;                // DHT11本轮读取成功标志(OLED显示用)
+    uint8_t dht11_ok;                // DHT11本轮读取成功标志(第1/2行显示"--"用)
 
     uart_init(9600);     // 串口1: 上位机协议输出+指令接收(PA9/PA10)
     uart3_init(9600);    // 串口3: 备用指令入口(PB11 RX)
@@ -406,10 +409,10 @@ int main(void)
         printf("Light:%d%%  ", light_percent);
         OLED_ShowNum(3, 13, light_percent, 3);   // OLED显示光照百分比(占第13~15列)
 
-        /* ---- 4. 空气质量: 消抖判定 → 行4先清后写(消除Error!/nice切换残留) ---- */
+        /* ---- 4. 空气质量: MQ-2烟雾判定, 与DHT11无关 → 先清后写(消除nice/bad切换残留) ---- */
         Check_Air_Quality();
-        OLED_ShowString(4, 5, "      ");          // 先清后写, 消除Error!/nice切换残留
-        OLED_ShowString(4, 5, dht11_ok ? air_status : "Error!");  // DHT11失败时提示
+        OLED_ShowString(4, 5, "      ");          // 先清后写, 消除nice/bad切换残留
+        OLED_ShowString(4, 5, air_status);        // 只显示MQ-2判定结果nice/bad
 
         /* ---- 5. 串口指令消费与解析(mode-x/DUOJ-x/MOTOR-x) ---- */
         Process_Serial_Command();
