@@ -1,4 +1,4 @@
-# 智能温室大棚监控系统 · PC 上位机
+# 智能温室大棚监测系统 · PC 上位机
 
 ![C#](https://img.shields.io/badge/C%23-WinForms-512BD4?style=for-the-badge&logo=csharp&logoColor=white)
 ![.NET](https://img.shields.io/badge/.NET%20Framework-4.7.2-512BD4?style=for-the-badge)

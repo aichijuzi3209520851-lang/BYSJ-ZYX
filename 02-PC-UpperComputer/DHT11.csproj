@@ -60,6 +60,7 @@
       <DependentUpon>Form1.cs</DependentUpon>
     </Compile>
     <Compile Include="Program.cs" />
+    <Compile Include="AppIcon.cs" />
     <Compile Include="LoginForm.cs">
       <SubType>Form</SubType>
     </Compile>
@@ -88,9 +89,29 @@
     <None Include="App.config" />
   </ItemGroup>
   <ItemGroup>
+    <!-- ICON 目录下所有运行时 PNG/ICO 资源，按原目录结构拷到输出目录 -->
     <Content Include="ICON\**\*.*">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
+    <!-- 下面这几个只是设计期的母版/备份/预览，不属于运行时资源，排除掉以免 exe 目录越来越臃肿 -->
+    <Content Remove="ICON\APP-ICON.jpg" />
+    <Content Remove="ICON\app_icon.jpg" />
+    <Content Remove="ICON\app_icon_old.ico" />
+    <Content Remove="ICON\app_icon_preview.png" />
   </ItemGroup>
+  <ItemGroup>
+    <!--
+      图标双保险（与 AppIcon.cs 配套）：
+        1) 上面的 <ApplicationIcon>ICON\app_icon.ico</ApplicationIcon> 决定 **智能温室.exe 文件本身**
+           在资源管理器 / 任务栏 / 开始菜单里显示哪张图；
+        2) 这里把同一个 ico 用 LogicalName 固定成 DHT11.ICON.app_icon.ico 内嵌进程序集，
+           供 AppIcon.cs 在 ICON 目录缺失、或 exe 被单独拷走时作为第二级后备。
+           ⚠ LogicalName 必须与 AppIcon.EmbeddedResourceName 常量一字不差。
+    -->
+    <EmbeddedResource Include="ICON\app_icon.ico">
+      <LogicalName>DHT11.ICON.app_icon.ico</LogicalName>
+    </EmbeddedResource>
+  </ItemGroup>
+
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
 </Project>

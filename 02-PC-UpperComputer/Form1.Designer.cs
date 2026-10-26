@@ -36,7 +36,7 @@ namespace DHT11
             this.AutoScaleMode = System.Windows.Forms.AutoScaleMode.Font;
             this.ClientSize = new System.Drawing.Size(1200, 700);
             this.Name = "Form1";
-            this.Text = "智能温室";
+            this.Text = "智能温室监测系统";
             this.ResumeLayout(false);
         }
 

@@ -30,13 +30,18 @@ namespace DHT11
         public LoginForm()
         {
             BuildUi();
+
+            // 标题栏左上角小图标 + 任务栏图标。csproj 的 ApplicationIcon 只作用于 exe 文件本身，
+            // 窗体不显式赋 Icon 的话运行时仍是 WinForms 默认图标，所以这里必须挂一次。
+            // AppIcon.Apply 内部逐级降级且全程吞异常，加载失败只会保持默认图标，不会影响登录流程。
+            AppIcon.Apply(this);
         }
 
         private void BuildUi()
         {
             this.SuspendLayout();
 
-            this.Text = "智能温室监控系统 v" + Application.ProductVersion + " - 登录";
+            this.Text = "智能温室监测系统 v" + Application.ProductVersion + " - 登录";
             this.ClientSize = new Size(400, 320);
             this.FormBorderStyle = FormBorderStyle.FixedDialog;
             this.MaximizeBox = false;
@@ -44,7 +49,8 @@ namespace DHT11
             this.StartPosition = FormStartPosition.CenterScreen;
             this.BackColor = pageBgColor;
             this.DoubleBuffered = true;
-            // 不挂 ApplicationIcon 之外的额外资源; 图标由 csproj 的 ApplicationIcon 决定。
+            // 窗体图标不在这里处理：构造函数里已调用 AppIcon.Apply(this)，
+            // 由它按「ICON\app_icon.ico → 内嵌资源 → csproj ApplicationIcon」逐级加载。
 
             Panel card = new Panel
             {
@@ -58,7 +64,7 @@ namespace DHT11
             {
                 Location = new Point(28, 22),
                 AutoSize = true,
-                Text = "智能温室监控系统",
+                Text = "智能温室监测系统",
                 Font = new Font("微软雅黑", 15F, FontStyle.Bold),
                 ForeColor = darkColor,
                 BackColor = Color.Transparent
