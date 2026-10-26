@@ -58,11 +58,12 @@ USART1 与 USART3 收到指令后统一交给 `Parse_Command_Frame()` 解析：
 ## 串口数据输出（每 1.5s 一帧）
 
 ```
-Temp:26C   Humi:60%RH   Soil:35%(raw=1200)  Light:72%  Servo:OFF Motor:OFF  Air:nice
+Temp:26C   Humi:60%RH   Soil:35%(raw=1200)  Light:72%  Servo:OFF Motor:OFF  Mode:AUTO  Air:nice
 ```
 
 - `Soil:` 土壤湿度百分比（`raw` 为 ADC 原始值，便于两点校准）
 - `Light:` 光照强度百分比（光敏电阻 AO → PB1/ADC1_IN9，仅采集展示，不参与报警联动）
+- `Mode:` 控制模式（`AUTO`=自动联动 / `MAN`=手动控制），供上位机/小程序回显，避免模式状态失步
 - 行尾出现 `Warning` 表示固件判定处于报警状态
 - PC 上位机按此格式解析并通过 MQTT 发布（详见根目录 README）
 

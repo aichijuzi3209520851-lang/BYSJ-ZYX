@@ -133,6 +133,7 @@ namespace DHT11
         private string _servoStatus = "OFF";
         private string _motorStatus = "OFF";
         private string _airQuality = "nice";
+        private string _modeStatus = "AUTO";  // 控制模式(固件 Mode:AUTO/MAN 字段, 供小程序回显)
 
         // MQTT客户端和配置
         private IMqttClient _mqttClient;
@@ -146,6 +147,12 @@ namespace DHT11
         public Form1()
         {
             InitializeComponent();  // 必须首先调用，初始化设计器生成的组件
+
+            // 主界面窗体图标（标题栏 + 任务栏 + Alt+Tab）。放在 InitializeComponent 之后，
+            // 因为此时 Handle 尚未创建，AppIcon 会等 Shown 事件里再精修图标帧；
+            // 与 LoginForm 共用同一个解析器，保证两个窗口显示的是同一张图。
+            AppIcon.Apply(this);
+
             InitializeSerialPort();
             InitializeChart();
             InitializeCustomComponents();
@@ -170,7 +177,7 @@ namespace DHT11
 
             // ========== 窗体基础设置 ==========
             // 标题带版本号: 排查"双击后好像没更新"时, 一眼就能看出跑的到底是哪个版本
-            this.Text = "智能温室监控系统 v" + Application.ProductVersion;
+            this.Text = "智能温室监测系统 v" + Application.ProductVersion;
 
             // 初始尺寸按屏幕工作区收敛: 高分屏缩放到 150% 时, DPI 未感知的 WinForms 程序拿到的是缩放后的逻辑像素,
             // 写死 1380x840 会比实际可用区域还大, 窗口右/下边界直接跑出屏幕。这里以工作区为准做一次钳制。
@@ -223,7 +230,7 @@ namespace DHT11
             {
                 Location = new Point(PadOuter + 4, 10),
                 AutoSize = true,
-                Text = "智能温室监控系统",
+                Text = "智能温室监测系统",
                 Font = new Font("微软雅黑", 15F, FontStyle.Bold),
                 ForeColor = darkColor,
                 BackColor = Color.Transparent
@@ -1458,6 +1465,10 @@ namespace DHT11
                     if (!p.HasTempHum)
                     {
                         LogMessage($"DHT11 无温湿度数据, 已跳过温度/湿度/图表更新(土壤={_waterLevel}%, 光照={_lightLevel}%)", warningColor);
+                        // P2-1修复: DHT11失败时其余字段(土壤/光照/执行器/空气)仍有效,
+                        // 照常发布MQTT保证小程序端数据连续; 温湿度置null由小程序显示"--",
+                        // 报警仍按土壤/空气字段判定(GetAlarmType内部对null温湿度按0处理)。
+                        PublishDataToMqtt(null, null);
                         return;
                     }
 
@@ -1593,6 +1604,14 @@ namespace DHT11
                 if (airMatch.Success)
                 {
                     _airQuality = airMatch.Groups[1].Value;
+                    parsedAny = true;
+                }
+
+                // 解析控制模式: Mode:AUTO/MAN(固件V1.3起输出, 供小程序回显当前模式)
+                var modeMatch = Regex.Match(data, @"Mode:(AUTO|MAN)");
+                if (modeMatch.Success)
+                {
+                    _modeStatus = modeMatch.Groups[1].Value;
                     parsedAny = true;
                 }
             }
@@ -2320,8 +2339,8 @@ namespace DHT11
             LogMessage($"自动发布MQTT数据: {(_mqttAutoPublish ? "已开启" : "已关闭")}");
         }
 
-        // 发布温湿度数据到MQTT
-        private async void PublishDataToMqtt(double temperature, double humidity)
+        // 发布温湿度数据到MQTT(温湿度可空: DHT11失败帧仍发布其余字段)
+        private async void PublishDataToMqtt(double? temperature, double? humidity)
         {
             try
             {
@@ -2336,8 +2355,18 @@ namespace DHT11
                 }
 
                 // 获取报警状态(统一阈值方案, 与固件/小程序一致)
-                string alarmType = GetAlarmType(temperature, humidity);
+                // 温湿度缺失时按0处理, 不影响土壤/空气报警判定
+                double temp = temperature ?? 0;
+                double hum = humidity ?? 0;
+                string alarmType = GetAlarmType(temp, hum);
                 bool hasAlarm = (alarmType != "正常");
+
+                // 温湿度缺失时JSON输出null(小程序端显示"--")
+                string tempJson = temperature.HasValue ? temperature.Value.ToString("F1", CultureInfo.InvariantCulture) : "null";
+                string humJson = humidity.HasValue ? humidity.Value.ToString("F1", CultureInfo.InvariantCulture) : "null";
+
+                // 控制模式字段: 固件 Mode:AUTO/MAN 转为小程序 mode:"auto"/"manual"
+                string modeValue = (_modeStatus == "MAN") ? "manual" : "auto";
 
                 // 构建JSON格式的数据(soilMoisture=土壤湿度%, 与小程序字段对应)
                 // 修复: 原来直接用 {temperature} 插值, 受当前区域设置影响 —— 德语/法语等小数点是逗号,
@@ -2345,13 +2374,14 @@ namespace DHT11
                 //       统一用 InvariantCulture 格式化, 保证小数点永远是 '.'。
                 string jsonData = $@"{{
     ""timestamp"": ""{DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss.fff", CultureInfo.InvariantCulture)}"",
-    ""temperature"": {temperature.ToString("F1", CultureInfo.InvariantCulture)},
-    ""humidity"": {humidity.ToString("F1", CultureInfo.InvariantCulture)},
+    ""temperature"": {tempJson},
+    ""humidity"": {humJson},
     ""soilMoisture"": {_waterLevel.ToString(CultureInfo.InvariantCulture)},
     ""lightPercent"": {_lightLevel.ToString(CultureInfo.InvariantCulture)},
     ""airQuality"": ""{_airQuality}"",
     ""servoStatus"": ""{_servoStatus}"",
     ""motorStatus"": ""{_motorStatus}"",
+    ""mode"": ""{modeValue}"",
     ""alarmType"": ""{alarmType}"",
     ""hasAlarm"": {hasAlarm.ToString().ToLowerInvariant()}
 }}";
@@ -2364,7 +2394,9 @@ namespace DHT11
                     .Build();
 
                 await _mqttClient.PublishAsync(message);
-                LogMessage($"[MQTT发送] 温度:{temperature}°C 湿度:{humidity}% 土壤湿度:{_waterLevel}% 光照:{_lightLevel}% 空气:{_airQuality} 报警:{alarmType}", Color.Blue);
+                string tempLog = temperature.HasValue ? temperature.Value.ToString("F1", CultureInfo.InvariantCulture) : "--";
+                string humLog = humidity.HasValue ? humidity.Value.ToString("F1", CultureInfo.InvariantCulture) : "--";
+                LogMessage($"[MQTT发送] 温度:{tempLog}°C 湿度:{humLog}% 土壤湿度:{_waterLevel}% 光照:{_lightLevel}% 空气:{_airQuality} 模式:{_modeStatus} 报警:{alarmType}", Color.Blue);
             }
             catch (Exception ex)
             {
@@ -2424,6 +2456,12 @@ namespace DHT11
                 string payload = Encoding.UTF8.GetString(e.ApplicationMessage.PayloadSegment.Array,
                     e.ApplicationMessage.PayloadSegment.Offset,
                     e.ApplicationMessage.PayloadSegment.Count);
+
+                // 只处理订阅的控制主题, 防止其他发布者的消息被误转发到串口
+                if (topic != _mqttSubscribeTopic)
+                {
+                    return Task.CompletedTask;
+                }
 
                 // 在UI线程中处理
                 SafeInvoke(delegate

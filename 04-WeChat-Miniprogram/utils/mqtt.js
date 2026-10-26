@@ -3,7 +3,8 @@
  * 最小 MQTT 3.1.1 over WebSocket 客户端(基于 wx.connectSocket 的手写协议实现)
  * 由传感器页(订阅 green/data)与执行器页(订阅 green/data + 发布 green/control)共用
  *
- * 协议子集: CONNECT/CONNACK, SUBSCRIBE/SUBACK, PUBLISH(QoS0 收发), PINGREQ/PINGRESP, DISCONNECT
+ * 协议子集: CONNECT/CONNACK, SUBSCRIBE/SUBACK, PUBLISH(QoS0收发/QoS1发布), PUBACK,
+ *           PINGREQ/PINGRESP, DISCONNECT
  * 可靠性设计(资深物联网实践):
  *   1. CONNECT 携带 keep-alive, 并以 keep-alive/2 周期发送 PINGREQ 心跳
  *   2. 异常断开自动重连(指数退避 2s/4s/8s, 上限 MAX_RECONNECT 次), 手动断开不重连
@@ -22,6 +23,7 @@
  *   })
  *   client.connect()
  *   client.publish('green/control', 'DUOJ-1')   // QoS0 发布, 返回是否已发出
+ *   client.publish('green/control', 'DUOJ-1', 1) // QoS1 发布(等PUBACK, 控制指令建议用)
  *   client.disconnect()                          // 用户主动断开(不重连)
  *   client.destroy()                             // 页体卸载时释放资源
  */
@@ -75,6 +77,7 @@ function createMqttClient(opts) {
   let packetIdSeq = 0
   let manualClosed = false   // 用户主动断开标记(断开后不再自动重连)
   let connected = false      // 是否已收到 CONNACK
+  const pendingQos1 = {}     // QoS1发布待确认表: packetId → {topic,message,ts}, 收PUBACK后清除
 
   const log = (level, msg) => { if (opts.onLog) opts.onLog(level, msg) }
   const setState = (state, info) => { if (opts.onState) opts.onState(state, info || {}) }
@@ -116,12 +119,20 @@ function createMqttClient(opts) {
     return [0x82, ...encodeRemainingLength(body.length), ...body]
   }
 
-  // PUBLISH: QoS 0 / 不保留 / 不重发
-  function buildPublish(topic, message) {
+  // PUBLISH: QoS0不保留 / QoS1需报文标识符并等PUBACK
+  // 注: 不实现DUP超时重发, 依赖WebSocket可靠传输+EMQX确认; 连接断开时pending自然作废
+  function buildPublish(topic, message, qos) {
     const topicBytes = utf8Bytes(topic)
     const payloadBytes = utf8Bytes(String(message))
-    const body = [topicBytes.length >> 8, topicBytes.length & 0xFF, ...topicBytes, ...payloadBytes]
-    return [0x30, ...encodeRemainingLength(body.length), ...body]
+    const body = [topicBytes.length >> 8, topicBytes.length & 0xFF, ...topicBytes]
+    let packetId = null
+    if (qos === 1) {
+      packetId = nextPacketId()
+      body.push(packetId >> 8, packetId & 0xFF)   // QoS1必须携带报文标识符
+    }
+    body.push(...payloadBytes)
+    const headerByte = (qos === 1) ? 0x32 : 0x30  // 0x30=QoS0 PUBLISH, 0x32=QoS1
+    return { bytes: [headerByte, ...encodeRemainingLength(body.length), ...body], packetId }
   }
 
   function sendBytes(bytes) {
@@ -268,6 +279,11 @@ function createMqttClient(opts) {
         // PUBLISH
         const parsed = parsePublish(bytes)
         if (parsed && opts.onPayload) opts.onPayload(parsed.text, parsed.topic)
+      } else if (type === 4) {
+        // PUBACK: QoS1发布确认(执行器页控制指令), 清除待确认记录
+        const packetId = (bytes[2] << 8) + bytes[3]
+        delete pendingQos1[packetId]
+        log('info', 'PUBACK packetId=' + packetId)
       } else if (type === 13) {
         // PINGRESP: 心跳应答, 连接健康
         log('info', 'PINGRESP')
@@ -307,13 +323,18 @@ function createMqttClient(opts) {
 
   /* ==================== 对外接口 ==================== */
 
-  // QoS0 发布; 未连接时返回 false(调用方自行提示)
-  function publish(topic, message) {
+  // QoS0/QoS1发布; 未连接时返回 false(调用方自行提示)
+  function publish(topic, message, qos) {
     if (!connected || !socketTask) {
       log('warn', '未连接, 丢弃发布: ' + topic)
       return false
     }
-    return sendBytes(buildPublish(topic, message))
+    const level = (qos === 1) ? 1 : 0
+    const built = buildPublish(topic, message, level)
+    if (level === 1 && built.packetId != null) {
+      pendingQos1[built.packetId] = { topic, message, ts: Date.now() }  // 登记待PUBACK确认
+    }
+    return sendBytes(built.bytes)
   }
 
   // 用户主动断开: 发送 DISCONNECT 后关闭, 不触发自动重连

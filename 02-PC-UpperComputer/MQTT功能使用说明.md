@@ -44,11 +44,12 @@ STM32下位机 ──串口(9600, 8N1)──▶ PC上位机(智能温室.exe) �
 ### 串口数据帧（STM32 → 上位机，以 `\r\n` 结尾）
 
 ```
-Temp:26C   Humi:60%RH   Soil:35%(raw=1200)  Light:72%  Servo:OFF Motor:OFF  Air:nice
+Temp:26C   Humi:60%RH   Soil:35%(raw=1200)  Light:72%  Servo:OFF Motor:OFF  Mode:AUTO  Air:nice
 ```
 
 - `Soil:` 为土壤湿度百分比（D2-5-2K 电容式，固件端已做反比映射）；`raw` 为 ADC 原始值，便于校准
 - `Light:` 为光照强度百分比（光敏电阻 ADC1_IN9，仅采集展示，不参与报警联动）
+- `Mode:` 为控制模式（`AUTO`=自动联动 / `MAN`=手动控制），v2.5 起新增，供小程序回显
 - `Warning` 字样出现在行尾表示固件判定报警
 
 ### MQTT 发布 JSON（主题 `green/data`，QoS 1）
@@ -63,6 +64,7 @@ Temp:26C   Humi:60%RH   Soil:35%(raw=1200)  Light:72%  Servo:OFF Motor:OFF  Air:
     "airQuality": "nice",
     "servoStatus": "OFF",
     "motorStatus": "OFF",
+    "mode": "auto",
     "alarmType": "正常",
     "hasAlarm": false
 }
@@ -70,7 +72,9 @@ Temp:26C   Humi:60%RH   Soil:35%(raw=1200)  Light:72%  Servo:OFF Motor:OFF  Air:
 
 - `soilMoisture`：土壤湿度百分比（v2.3 起由旧字段 `waterLevel` 更名，语义已从"水位"更正为"土壤湿度"）
 - `lightPercent`：光照强度百分比（0–100，来自串口 `Light:` 字段；固件未提供光照阈值，故仅作展示字段）
+- `mode`：控制模式（`"auto"`/`"manual"`，来自串口 `Mode:` 字段），v2.5 起新增
 - `hasAlarm`：按统一阈值计算的总报警标志，小程序据此显示报警横幅并震动提醒
+- 注：DHT11 读取失败时上位机**仍照常发布**该 JSON，此时 `temperature`/`humidity` 为 `null`，小程序显示 `--`，其余字段（土壤/光照/执行器/空气）不受影响
 
 ### 远程控制指令（主题 `green/control` → 原文透传串口）
 
@@ -148,7 +152,7 @@ v2.3 已同步修正；若仍为 0 请确认上位机为最新版本、固件串
 
 ## 版本信息
 
-- **程序名称**：智能温室大棚监控系统（上位机）
+- **程序名称**：智能温室大棚监测系统（上位机）
 - **版本**：v2.5（界面重构版）
 - **更新日期**：2026-10-25
 - **v2.5 变更内容**：

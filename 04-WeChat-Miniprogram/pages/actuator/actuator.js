@@ -225,11 +225,19 @@ Page({
       return
     }
 
-    this.setData({
+    const patch = {
       'device.servoStatus': jsonData.servoStatus || null,
       'device.motorStatus': jsonData.motorStatus || null,
       lastUpdateTime: this.formatTime(new Date())
-    })
+    }
+
+    // 固件模式回显: 上位机已把固件 Mode:AUTO/MAN 转为 mode:"auto"/"manual",
+    // 以固件实际模式为准覆盖本地状态(避免与上位机按钮切换失步)
+    if (jsonData.mode === 'auto' || jsonData.mode === 'manual') {
+      patch.mode = jsonData.mode
+    }
+
+    this.setData(patch)
   },
 
   /* ==================== 控制指令 ==================== */
@@ -245,7 +253,7 @@ Page({
     }
 
     const cmd = target === 'manual' ? 'mode-1' : 'mode-0'
-    if (!this._client.publish(CONTROL_TOPIC, cmd)) {
+    if (!this._client.publish(CONTROL_TOPIC, cmd, 1)) {   // QoS1: 控制指令可靠送达
       wx.showToast({ title: '指令发送失败', icon: 'none' })
       return
     }
@@ -266,7 +274,7 @@ Page({
       wx.showToast({ title: '自动模式下设备自主联动, 请先切换手动模式', icon: 'none' })
       return
     }
-    if (!this._client.publish(CONTROL_TOPIC, cmd)) {
+    if (!this._client.publish(CONTROL_TOPIC, cmd, 1)) {   // QoS1: 控制指令可靠送达
       wx.showToast({ title: '指令发送失败', icon: 'none' })
       return
     }

@@ -422,11 +422,14 @@ int main(void)
 
         /* ---- 7. 协议帧输出(上位机按字段正则解析, 1.5s/帧) ----
          * 帧格式: Temp:%dC Humi:%d%%RH Soil:%d%%(raw=%d) Light:%d%%
-         *         Servo:ON|OFF Motor:ON|OFF Air:nice|bad [Warning]\r\n
-         * Warning后缀由固件报警判定附加(上位机同源阈值展示) */
-        printf("Servo:%s Motor:%s ",
+         *         Servo:ON|OFF Motor:ON|OFF Mode:AUTO|MAN Air:nice|bad [Warning]\r\n
+         * Warning后缀由固件报警判定附加(上位机同源阈值展示)
+         * Mode字段: manual_mode=0输出AUTO, =1输出MAN, 供上位机/小程序
+         * 回显当前控制模式(避免小程序本地模式状态与固件失步) */
+        printf("Servo:%s Motor:%s Mode:%s ",
                (servo_angle == 180) ? "ON " : "OFF",
-               (motor_status == 1) ? "ON " : "OFF");
+               (motor_status == 1) ? "ON " : "OFF",
+               manual_mode ? "MAN" : "AUTO");
 
         if (temp_humi_alarm_status || (water_percent > ALARM_SOIL_MAX) || (strcmp(air_status, "bad") == 0))
         {
