@@ -36,7 +36,7 @@ namespace DHT11
         {
             this.SuspendLayout();
 
-            this.Text = "智能温室监控系统 - 登录";
+            this.Text = "智能温室监控系统 v" + Application.ProductVersion + " - 登录";
             this.ClientSize = new Size(400, 320);
             this.FormBorderStyle = FormBorderStyle.FixedDialog;
             this.MaximizeBox = false;
