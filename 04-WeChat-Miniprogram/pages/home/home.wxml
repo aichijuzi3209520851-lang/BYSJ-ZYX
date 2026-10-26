@@ -31,7 +31,7 @@
   <!-- 欢迎卡片 -->
   <view class="card welcome">
     <text class="welcome-text">
-      基于 STM32 与 MQTT 的温室环境监控系统，实时采集温湿度、土壤湿度与空气质量，报警联动天窗与风扇。
+      基于 STM32 与 MQTT 的温室环境监测系统，实时采集温湿度、土壤湿度与空气质量，报警联动天窗与风扇。
     </text>
   </view>
 
@@ -56,7 +56,7 @@
     <view class="feature-row">
       <image class="feature-icon" src="/ICON/蜂鸣器-关状态.png" mode="aspectFit" />
       <view class="feature-body">
-        <text class="feature-title">远程监控</text>
+        <text class="feature-title">远程监测</text>
         <text class="feature-desc t-sub">EMQX 消息中间件分发，手机端查看数据并开关天窗风扇</text>
       </view>
     </view>

@@ -1,4 +1,4 @@
-# STM32F103C8T6 智能温室大棚监控系统（下位机固件）
+# STM32F103C8T6 智能温室大棚监测系统（下位机固件）
 
 ![MCU](https://img.shields.io/badge/MCU-STM32F103C8T6-blue.svg)
 ![Keil](https://img.shields.io/badge/IDE-Keil%20MDK5-red.svg)

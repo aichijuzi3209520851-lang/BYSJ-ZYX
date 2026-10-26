@@ -240,7 +240,7 @@ namespace DHT11
             {
                 Location = new Point(PadOuter + 6, 38),
                 AutoSize = true,
-                Text = "STM32 环境采集 · 设备联动 · MQTT 远程监控",
+                Text = "STM32 环境采集 · 设备联动 · MQTT 远程监测",
                 Font = new Font("微软雅黑", 8.5F),
                 ForeColor = textSecondaryColor,
                 BackColor = Color.Transparent

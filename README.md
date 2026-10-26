@@ -1,4 +1,4 @@
-# 智能温室大棚物联网监控系统 · Smart Greenhouse IoT System
+# 智能温室大棚物联网监测系统 · Smart Greenhouse IoT System
 
 ![STM32](https://img.shields.io/badge/STM32-F103C8T6-blue?style=for-the-badge&logo=stmicroelectronics&logoColor=white)
 ![Bare-metal](https://img.shields.io/badge/固件-裸机分时隙主循环-2496ED?style=for-the-badge)
@@ -7,7 +7,7 @@
 ![WeChat](https://img.shields.io/badge/微信小程序-Native-07C160?style=for-the-badge&logo=wechat&logoColor=white)
 ![License](https://img.shields.io/badge/License-MIT-green?style=for-the-badge)
 
-一套完整的**毕业设计级**温室大棚物联网监控系统：STM32 下位机采集温室环境数据，
+一套完整的**毕业设计级**温室大棚物联网监测系统：STM32 下位机采集温室环境数据，
 PC 上位机通过串口解析后经 MQTT 上云，微信小程序订阅数据并可下发控制指令，
 实现"**感知 — 传输 — 展示 — 控制**"全链路闭环。
 

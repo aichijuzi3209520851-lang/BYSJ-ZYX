@@ -6,7 +6,7 @@ using System.Runtime.InteropServices;
 // 控制。更改这些特性值可修改
 // 与程序集关联的信息。
 [assembly: AssemblyTitle("智能温室监测系统")]
-[assembly: AssemblyDescription("STM32 环境采集 · 设备联动 · MQTT 远程监控 上位机")]
+[assembly: AssemblyDescription("STM32 环境采集 · 设备联动 · MQTT 远程监测 上位机")]
 [assembly: AssemblyConfiguration("")]
 [assembly: AssemblyCompany("")]
 [assembly: AssemblyProduct("智能温室监测系统")]
