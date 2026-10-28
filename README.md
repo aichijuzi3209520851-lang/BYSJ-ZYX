@@ -50,6 +50,7 @@ PC 上位机通过串口解析后经 MQTT 上云，微信小程序订阅数据�
 | [`02-PC-UpperComputer`](./02-PC-UpperComputer) | PC 上位机：串口解析、曲线图表、MQTT 发布/订阅转发、登录鉴权 | C# .NET Framework 4.7.2 / WinForms / MQTTnet |
 | [`03-EMQX-Server`](./03-EMQX-Server) | EMQX 一键启动器（MQTT.exe）与服务器部署说明 | C# .NET 10 控制台 |
 | [`04-WeChat-Miniprogram`](./04-WeChat-Miniprogram) | 微信小程序：温室主题轮播首页、五项环境数据、执行器远程控制、报警提醒、MQTT 配置与历史 | 原生小程序 / MQTT over WebSocket |
+| [`05-Testing-Tool`](./05-Testing-Tool) | 物联网链路调试台：固件帧模拟(上行) + MQTT 订阅监控 + 指令控制台(下行)，无硬件全链路联调，协议模板可复用 | C# .NET 10 WinForms / MQTTnet |
 
 ## 核心特性
 
@@ -75,7 +76,7 @@ PC 上位机通过串口解析后经 MQTT 上云，微信小程序订阅数据�
 ### 串口帧（STM32 → 上位机，`\r\n` 结尾）
 
 ```
-Temp:26C   Humi:60%RH   Soil:35%(raw=1200)  Light:72%  Servo:OFF Motor:OFF  Air:nice
+Temp:26C   Humi:60%RH   Soil:35%(raw=1200)  Light:72%  Servo:OFF Motor:OFF  Mode:AUTO  Air:nice
 ```
 
 | 字段 | 含义 | 备注 |
@@ -85,6 +86,7 @@ Temp:26C   Humi:60%RH   Soil:35%(raw=1200)  Light:72%  Servo:OFF Motor:OFF  Air:
 | `Soil:` / `raw=` | 土壤湿度 % / ADC 原始值 | D2-5-2K，两点校准用 |
 | `Light:` | 光照强度 % | 光敏电阻 ADC1_IN9，仅展示 |
 | `Servo:` / `Motor:` | 天窗 / 风扇状态 | ON / OFF |
+| `Mode:` | 控制模式 | AUTO=自动联动 / MAN=手动，供上位机/小程序回显防失步 |
 | `Air:` | 空气质量 | nice / bad |
 | `Warning` | 行尾报警标记 | 出现即表示固件判定报警 |
 
@@ -100,6 +102,7 @@ Temp:26C   Humi:60%RH   Soil:35%(raw=1200)  Light:72%  Servo:OFF Motor:OFF  Air:
   "airQuality": "nice",
   "servoStatus": "OFF",
   "motorStatus": "OFF",
+  "mode": "auto",
   "alarmType": "正常",
   "hasAlarm": false
 }
@@ -149,6 +152,12 @@ Visual Studio 2019+ 打开 `02-PC-UpperComputer/DHT11.csproj`（NuGet 会自动�
 传感器页 → 配置 → 填入 EMQX 主机 IP、WebSocket 端口 `8083`、订阅主题 `green/data` → 保存并连接。
 连接过的配置会自动存入历史，下次一键回填。
 
+### 5. 无硬件联调（可选）
+
+实物不在身边时，用 [`05-Testing-Tool`](./05-Testing-Tool) 的**物联网链路调试台**模拟固件帧：
+`IotLinkLab.exe` 连接 EMQX → 设备模拟器「开始定时发送」→ 小程序即可看到实时数据；
+小程序下发指令 → 工具日志显示固件回显。详见 [05-Testing-Tool/README](./05-Testing-Tool/README.md)。
+
 ## 各端默认配置速查
 
 | 配置项 | PC 上位机 | 微信小程序 |
@@ -166,6 +175,7 @@ Visual Studio 2019+ 打开 `02-PC-UpperComputer/DHT11.csproj`（NuGet 会自动�
 - [EMQX 部署与一键启动器](./03-EMQX-Server/README.md)
 - [小程序说明](./04-WeChat-Miniprogram/README.md)
 - [MQTT 连接故障排查](./04-WeChat-Miniprogram/MQTT连接故障排查.md) / [真机调试指南](./04-WeChat-Miniprogram/真机调试MQTT连接指南.md)
+- [物联网链路调试台（无硬件联调）](./05-Testing-Tool/README.md)
 
 ## License
 

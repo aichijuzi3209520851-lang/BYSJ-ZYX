@@ -1,0 +1,125 @@
+# 物联网链路调试台 · IoT Link Lab
+
+![C#](https://img.shields.io/badge/C%23-.NET%2010-512BD4?style=for-the-badge&logo=csharp&logoColor=white)
+![MQTTnet](https://img.shields.io/badge/MQTTnet-4.3.7-660066?style=for-the-badge)
+![License](https://img.shields.io/badge/License-MIT-green?style=for-the-badge)
+
+**实物设备不在身边时的全链路联调工具**：在一台电脑上模拟"STM32 固件 → 串口 → 上位机 → EMQX"的上行数据流，
+同时提供下行指令台与订阅监控台，打通 **上位机 / EMQX / 微信小程序** 三端的上下行通信验证。
+
+> 设计为**通用组件**：协议层与 UI 解耦，内置 "STM32-Greenhouse" 预设，也可自定义帧模板复用到任何
+> "串口设备 → 解析 → MQTT" 形态的项目。
+
+## 界面截图
+
+| ① 设备模拟器（上行） | ② 订阅监控台 | ③ 控制台（下行） |
+| --- | --- | --- |
+| ![设备模拟器](./screenshots/sim.png) | ![订阅监控台](./screenshots/monitor.png) | ![控制台](./screenshots/control-tab.png) |
+
+| E2E 闭环：小程序指令 → 固件模拟回显 → 帧回发 | 小程序端回显（天窗开启） |
+| --- | --- |
+| ![E2E 回显](./screenshots/e2e-echo.png) | ![小程序回显](./screenshots/e2e-actuator-echo.png) |
+
+## 三页功能
+
+### ① 设备模拟器（上行链路）
+
+- **帧生成**：按固件协议模板渲染帧文本，占位符 `{temp} {humi} {soil} {raw} {light} {servo} {motor} {mode} {air} {warning}`
+- **场景预设**：正常态 / 温度报警 / 湿度报警 / 土壤过湿 / 烟雾污染 / **DHT11 读取失败帧**（温湿度字段缺失，其余字段照常）
+- **发送控制**：手动单发 / 定时轮发（周期可调，默认 1.5s 对齐固件）/ 可选数值抖动模拟真实波动
+- **三层预览**：固件帧文本（串口视角）→ 解析字段（与上位机同一套正则）→ 发布 JSON（green/data 契约）
+- **可选串口输出**：勾选后帧文本同步写入真实 COM（配合虚拟串口对 com0com，让**真实的智能温室.exe** 走完整"串口→解析→发布"链路）
+- **固件模拟回显**：收到控制指令后自动更新模拟设备状态（开窗→下一帧 `Servo:ON`），实现无硬件闭环
+
+### ② 订阅监控台
+
+- 订阅任意主题（可添加多个），消息列表滚动保留最近 400 条 + 载荷详情 + JSON 查看
+- 计数 / 速率统计 / 一键暂停；连接成功后自动订阅数据主题与控制主题
+
+### ③ 控制台（下行链路）
+
+- 固件指令集预设按钮：`mode-0/1`（任意时刻生效）、`DUOJ-0/1`、`MOTOR-0/1`（仅手动模式，与固件 `Parse_Command_Frame` 行为一致）
+- 自定义报文原文透传；QoS0/QoS1 可选
+- 下发后模拟器状态联动，日志同步显示"固件回显"或"固件忽略（自动模式）"
+
+## 数据契约（内置 STM32-Greenhouse 预设）
+
+与固件 `User/main.c`（V1.2）、上位机 `02-PC-UpperComputer/Form1.cs` 逐字段一致：
+
+```
+上行帧(1.5s/帧, \r\n 结尾, 9600 8N1):
+Temp:24.0C   Humi:62.0%RH   Soil:35%(raw=2080)  Light:72%  Servo:OFF Motor:OFF Mode:AUTO Air:nice
+报警时行尾追加 " Warning"；DHT11 失败帧无 Temp/Humi 段（"DHT11 Read Failed!   Soil:... "）
+
+解析正则(与上位机一字不差): Temp:(-?\d+(?:\.\d+)?)C / Humi:(\d+(?:\.\d+)?)%RH /
+Soil:(\d+)% / Light:(\d+)% / Servo:(ON|OFF) / Motor:(ON|OFF) / Mode:(AUTO|MAN) / Air:(nice|bad)
+
+下行指令(green/control 原文透传): mode-0 / mode-1 / DUOJ-0 / DUOJ-1 / MOTOR-0 / MOTOR-1
+```
+
+发布 JSON（`green/data`，QoS1）与上位机 `PublishDataToMqtt` 完全同契约：
+
+```json
+{
+  "timestamp": "2026-10-29 02:48:50.317",
+  "temperature": 24.0,
+  "humidity": 62.0,
+  "soilMoisture": 35,
+  "lightPercent": 72,
+  "airQuality": "nice",
+  "servoStatus": "OFF",
+  "motorStatus": "OFF",
+  "mode": "auto",
+  "alarmType": "正常",
+  "hasAlarm": false
+}
+```
+
+统一报警阈值（三端一致）：温度>26°C / 湿度>85%RH / 土壤>40%（过湿）/ 空气 bad。
+
+## 快速开始
+
+`dotnet build`（.NET 10 SDK）或 Visual Studio 打开 `WinFormsApp1.slnx` 编译运行 `IotLinkLab.exe`。
+
+**用法 A · 纯 MQTT 闭环（默认，零硬件）**
+
+1. 启动 EMQX（见仓库根 README / `03-EMQX-Server`），工具填 `127.0.0.1:1883` 点「连接」
+2. 设备模拟器选场景 → 「开始定时发送」——JSON 即持续发布到 `green/data`
+3. 微信小程序（WebSocket `8083`）或任意 MQTT 客户端订阅 `green/data` 即可看到实时数据
+4. 小程序「执行器」页下发指令 → 工具日志显示 `[下行]` 与固件回显，下一帧状态同步变化
+
+**用法 B · 配合真实上位机（虚拟串口）**
+
+1. 安装虚拟串口对工具（如 com0com）创建 COM 对（如 COM6↔COM7）
+2. 工具勾选「同步写串口」选 COM6；真实上位机连接 COM7
+3. 上位机走真实"串口接收 → 正则解析 → MQTT 发布"全链路，小程序照常订阅
+
+**用法 C · 复用到其他项目**
+
+帧模板可编辑（占位符替换），解析层自动适配；订阅监控台与控制台与协议无关，直接复用。
+
+## 工程结构
+
+```
+├── WinFormsApp1.csproj   # net10.0-windows, MQTTnet 4.3.7 + System.IO.Ports
+├── Program.cs            # 入口
+├── Form1.cs              # 主窗体: 横幅/连接栏/三页导航/日志/设置持久化
+├── Theme.cs             # 设计令牌(浅色科技风, 与上位机同一套温室绿语言)
+├── Controls.cs          # RoundedButton / Card / StatusChip 自绘控件
+├── FrameCodec.cs        # 协议核心: 帧模板渲染 / 正则解析 / JSON 构建(可复用)
+├── MqttLink.cs         # MQTT 服务: TCP/WS 双协议 + 指数退避重连
+├── SimulatorTab.cs    # ① 设备模拟器(含串口输出/固件回显)
+├── MonitorTab.cs      # ② 订阅监控台
+├── ControlTab.cs      # ③ 控制台
+└── assets/banner.jpg   # 顶部横幅图
+```
+
+## 图片素材来源（Pexels 免费商用）
+
+| 文件 | 内容 | 来源 |
+| --- | --- | --- |
+| `assets/banner.jpg` | 阳光下的绿叶 | [Pexels #4065601](https://www.pexels.com/photo/4065601/) |
+
+## License
+
+MIT
