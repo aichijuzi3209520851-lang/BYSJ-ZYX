@@ -41,11 +41,11 @@ namespace DHT11
         // UI控件
         private ComboBox comPortComboBox;
         private ComboBox baudRateComboBox;
-        private Button openButton;
-        private Button closeButton;
-        private Button refreshButton;
-        private Button clearButton;
-        private Button exportButton;
+        private RoundedButton openButton;
+        private RoundedButton closeButton;
+        private RoundedButton refreshButton;
+        private RoundedButton clearButton;
+        private RoundedButton exportButton;
         private Label tempLabel;
         private Label humLabel;
         private Panel chartPanel;
@@ -69,12 +69,11 @@ namespace DHT11
         private PictureBox windowIconPictureBox;  // 窗户图标
         private PictureBox fanIconPictureBox;     // 风扇图标
         private PictureBox buzzerIconPictureBox;  // 蜂鸣器图标
-        private Button servoOnButton;
-        private Button servoOffButton;
-        private Button motorOnButton;
-        private Button motorOffButton;
-        private Button modeAutoButton;
-        private Button modeManualButton;
+        private RoundedButton servoOnButton;
+        private RoundedButton servoOffButton;
+        private RoundedButton motorOnButton;
+        private RoundedButton motorOffButton;
+        private SegmentedControl modeSegment;   // 自动/手动模式分段控件(取代两颗独立按钮)
         private Label modeStatusLabel;
         private Label buzzerLabel;   // 蜂鸣器卡片数值(原为 InitializeCustomComponents 内局部变量, 卡片化后提为字段)
 
@@ -82,8 +81,8 @@ namespace DHT11
         private TextBox mqttBrokerTextBox;
         private TextBox mqttTopicTextBox;
         private TextBox mqttSubscribeTopicTextBox;
-        private Button mqttConnectButton;
-        private Button mqttDisconnectButton;
+        private RoundedButton mqttConnectButton;
+        private RoundedButton mqttDisconnectButton;
         private Label mqttBrokerLabel;
         private Label mqttTopicLabel;
         private Label mqttSubscribeTopicLabel;
@@ -101,7 +100,7 @@ namespace DHT11
         private CardPanel connectPanel;
         private Panel cardsPanel;
         private CardPanel devicePanel;
-        private Button logoutButton;
+        private RoundedButton logoutButton;
         private readonly List<CardPanel> _cards = new List<CardPanel>();
 
         // 统一报警阈值(与STM32固件/微信小程序保持一致, 三端使用同一组数值)
@@ -114,16 +113,16 @@ namespace DHT11
         private bool _tempAlarm = false;
         private bool _humAlarm = false;
 
-        // 配色方案
-        private Color primaryColor = Color.FromArgb(33, 150, 243);      // 蓝色
-        private Color successColor = Color.FromArgb(76, 175, 80);       // 绿色
-        private Color dangerColor = Color.FromArgb(244, 67, 54);        // 红色
-        private Color warningColor = Color.FromArgb(255, 152, 0);       // 橙色
-        private Color darkColor = Color.FromArgb(52, 73, 94);           // 深蓝灰
-        private Color lightColor = Color.FromArgb(236, 240, 241);       // 浅灰
-        private Color chartBgColor = Color.FromArgb(250, 250, 250);     // 图表背景
-        private Color pageBgColor = Color.FromArgb(244, 246, 249);      // 页面底色(略冷灰)
-        private Color textSecondaryColor = Color.FromArgb(120, 132, 148); // 次要文字色
+        // 配色方案: 统一走 AppTheme 设计令牌(温室绿+暖木+奶油白, Organic Biophilic)
+        private Color primaryColor = AppTheme.Primary;
+        private Color successColor = AppTheme.Success;
+        private Color dangerColor = AppTheme.Danger;
+        private Color warningColor = AppTheme.Warning;
+        private Color darkColor = AppTheme.TextPrimary;
+        private Color lightColor = Color.FromArgb(236, 240, 241);
+        private Color chartBgColor = Color.White;
+        private Color pageBgColor = AppTheme.PageBg;
+        private Color textSecondaryColor = AppTheme.TextSecondary;
 
         // 数据格式解析配置：固件固定使用 STM32 格式 (Temp:XXC Humi:XX%RH ...), 无需运行时切换
 
@@ -165,7 +164,7 @@ namespace DHT11
         // 原实现"构造时写一套坐标、Resize 时再改另一套", 两套数值不一致就错位, 这里彻底改掉。
         private const int PadOuter = 12;            // 窗体四周留白
         private const int GapBlock = 12;            // 区块间距
-        private const int HeaderHeight = 62;        // 顶部标题栏高度
+        private const int HeaderHeight = 92;        // 顶部温室横幅高度
         private const int ConnectHeight = 136;      // 连接配置卡片高度(两行)
         private const int CardHeight = 96;          // 传感器/执行器卡片高度
         private const int DeviceHeight = 64;        // 设备控制条高度
@@ -215,34 +214,34 @@ namespace DHT11
             ApplyResponsiveLayout();
         }
 
-        // ========== 顶部标题栏: 系统名 + 副标题 + 头像 + 昵称 + 注销 ==========
+        // ========== 顶部温室横幅: 实拍照片 + 渐变纱罩 + 产品名 + 用户区 ==========
         private void BuildHeader()
         {
             headerPanel = new Panel
             {
                 Location = new Point(0, 0),
                 Size = new Size(this.ClientSize.Width, HeaderHeight),
-                BackColor = Color.White
+                BackColor = AppTheme.Primary
             };
             headerPanel.Paint += HeaderPanel_Paint;
 
             Label appTitle = new Label
             {
-                Location = new Point(PadOuter + 4, 10),
+                Location = new Point(PadOuter + 8, 14),
                 AutoSize = true,
-                Text = "智能温室监测系统",
+                Text = "智能温室大棚监测系统",
                 Font = new Font("微软雅黑", 15F, FontStyle.Bold),
-                ForeColor = darkColor,
+                ForeColor = Color.White,
                 BackColor = Color.Transparent
             };
 
             Label appSubTitle = new Label
             {
-                Location = new Point(PadOuter + 6, 38),
+                Location = new Point(PadOuter + 10, 48),
                 AutoSize = true,
                 Text = "STM32 环境采集 · 设备联动 · MQTT 远程监测",
                 Font = new Font("微软雅黑", 8.5F),
-                ForeColor = textSecondaryColor,
+                ForeColor = Color.FromArgb(205, 255, 255, 255),
                 BackColor = Color.Transparent
             };
 
@@ -258,13 +257,22 @@ namespace DHT11
             {
                 Location = new Point(0, 0),
                 AutoSize = true,
-                Text = "爱吃橘子🍊",
+                Text = "爱吃橘子",
                 Font = new Font("微软雅黑", 9F),
-                ForeColor = darkColor,
+                ForeColor = Color.White,
                 BackColor = Color.Transparent
             };
 
-            logoutButton = CreateStyledButton("注销", new Point(0, 0), new Size(64, 26), textSecondaryColor);
+            logoutButton = new RoundedButton
+            {
+                Text = "注销",
+                Size = new Size(64, 28),
+                FillColor = Color.FromArgb(60, 255, 255, 255),
+                TextColor = Color.White,
+                Outline = true
+            };
+            // 描边颜色跟随 FillColor: 白色描边空心按钮
+            logoutButton.FillColor = Color.White;
             logoutButton.Click += LogoutButton_Click;
 
             headerPanel.Controls.AddRange(new Control[] {
@@ -533,7 +541,10 @@ namespace DHT11
                 Location = new Point(52, 33),
                 Size = new Size(100, 34),
                 Text = initialValue,
-                Font = new Font("Arial", valueFontSize, FontStyle.Bold),
+                // 数值卡用 Consolas 等宽数字; 状态卡(无单位)保留微软雅黑
+                Font = string.IsNullOrEmpty(unit)
+                    ? AppTheme.FontUi(valueFontSize, bold: true)
+                    : new Font("Consolas", valueFontSize, FontStyle.Bold),
                 ForeColor = accent,
                 TextAlign = ContentAlignment.MiddleLeft,
                 BackColor = Color.Transparent
@@ -562,16 +573,16 @@ namespace DHT11
             return card;
         }
 
-        // ========== 设备控制条: 模式切换 + 窗户/风扇手动控制 ==========
+        // ========== 设备控制条: 模式分段控件 + 窗户/风扇手动控制(8px 网格排布) ==========
         private void BuildDevicePanel()
         {
             devicePanel = new CardPanel
             {
                 Location = new Point(PadOuter, 0),
                 Size = new Size(this.ClientSize.Width - PadOuter * 2, DeviceHeight),
-                Radius = 12,
+                Radius = AppTheme.RadiusCard,
                 ShowAccent = true,
-                AccentColor = Color.FromArgb(0, 172, 193)
+                AccentColor = AppTheme.Primary
             };
 
             Label deviceTitle = new Label
@@ -586,7 +597,7 @@ namespace DHT11
 
             modeStatusLabel = new Label
             {
-                Location = new Point(96, 24),
+                Location = new Point(96, 26),
                 AutoSize = true,
                 Text = "● 自动模式",
                 Font = new Font("微软雅黑", 9F),
@@ -594,46 +605,46 @@ namespace DHT11
                 BackColor = Color.Transparent
             };
 
-            modeAutoButton = CreateStyledButton("自动模式", new Point(212, 17), new Size(90, 30), successColor);
-            modeAutoButton.Click += ModeAutoButton_Click;
+            // 模式分段控件(自动=0 / 手动=1), 取代原来两颗独立按钮
+            modeSegment = new SegmentedControl
+            {
+                Location = new Point(196, 16),
+                Size = new Size(192, 32),
+                Items = new[] { "自动模式", "手动模式" },
+                SelectedIndex = 0
+            };
+            modeSegment.SelectedChanged += (s, e) =>
+            {
+                if (modeSegment.SelectedIndex == 0) ModeAutoButton_Click(s, e);
+                else ModeManualButton_Click(s, e);
+            };
 
-            modeManualButton = CreateStyledButton("手动模式", new Point(310, 17), new Size(90, 30), warningColor);
-            modeManualButton.Click += ModeManualButton_Click;
-
-            servoOffButton = CreateStyledButton("窗户关", new Point(430, 17), new Size(84, 30), primaryColor);
-            servoOffButton.Click += ServoOffButton_Click;
-            servoOffButton.Enabled = false;
-
-            servoOnButton = CreateStyledButton("窗户开", new Point(522, 17), new Size(84, 30), primaryColor);
+            // 天窗组: 开=实心 / 关=空心, 两键等宽并排(间距 8px)
+            servoOnButton = CreateStyledButton("窗户开", new Point(440, 16), new Size(84, 32), AppTheme.Primary);
             servoOnButton.Click += ServoOnButton_Click;
             servoOnButton.Enabled = false;
 
-            motorOffButton = CreateStyledButton("风扇关", new Point(640, 17), new Size(84, 30), primaryColor);
-            motorOffButton.Click += MotorOffButton_Click;
-            motorOffButton.Enabled = false;
+            servoOffButton = CreateStyledButton("窗户关", new Point(532, 16), new Size(84, 32), AppTheme.Primary);
+            servoOffButton.Click += ServoOffButton_Click;
+            servoOffButton.Enabled = false;
+            servoOffButton.Outline = true;
+            servoOffButton.TextColor = AppTheme.Primary;   // 空心按钮文字用主题色, 白字在白卡上不可见
 
-            motorOnButton = CreateStyledButton("风扇开", new Point(732, 17), new Size(84, 30), primaryColor);
+            // 风扇组: 与天窗组留 16px 组间距
+            motorOnButton = CreateStyledButton("风扇开", new Point(632, 16), new Size(84, 32), AppTheme.Primary);
             motorOnButton.Click += MotorOnButton_Click;
             motorOnButton.Enabled = false;
 
-            Label deviceHint = new Label
-            {
-                Name = "deviceHintLabel",
-                Location = new Point(0, 22),
-                AutoSize = false,
-                Size = new Size(340, 20),
-                Text = "提示: 切换到手动模式后, 窗户/风扇按钮才可操作",
-                Font = new Font("微软雅黑", 8.5F),
-                ForeColor = textSecondaryColor,
-                TextAlign = ContentAlignment.MiddleRight,
-                BackColor = Color.Transparent
-            };
+            motorOffButton = CreateStyledButton("风扇关", new Point(724, 16), new Size(84, 32), AppTheme.Primary);
+            motorOffButton.Click += MotorOffButton_Click;
+            motorOffButton.Enabled = false;
+            motorOffButton.Outline = true;
+            motorOffButton.TextColor = AppTheme.Primary;
 
             devicePanel.Controls.AddRange(new Control[] {
-                deviceTitle, modeStatusLabel,
-                modeAutoButton, modeManualButton,
-                servoOffButton, servoOnButton,
-                motorOffButton, motorOnButton, deviceHint
+                deviceTitle, modeStatusLabel, modeSegment,
+                servoOnButton, servoOffButton,
+                motorOnButton, motorOffButton
             });
 
             this.Controls.Add(devicePanel);
@@ -759,14 +770,18 @@ namespace DHT11
                 }
             }
 
-            // ---------- 4. 设备控制条 ----------
+            // ---------- 4. 设备控制条(分段控件与四颗按钮右对齐, 组间距 16px) ----------
             int deviceTop = cardsTop + CardHeight + GapBlock;
             devicePanel.SetBounds(PadOuter, deviceTop, innerWidth, DeviceHeight);
 
-            Control deviceHint = devicePanel.Controls["deviceHintLabel"];
-            if (deviceHint != null)
+            if (modeSegment != null && motorOffButton != null)
             {
-                deviceHint.Location = new Point(devicePanel.Width - 16 - deviceHint.Width, 22);
+                int rightEdge = devicePanel.Width - 20;
+                motorOffButton.Location = new Point(rightEdge - motorOffButton.Width, 16);
+                motorOnButton.Location = new Point(motorOffButton.Left - 8 - motorOnButton.Width, 16);
+                servoOffButton.Location = new Point(motorOnButton.Left - 16 - servoOffButton.Width, 16);
+                servoOnButton.Location = new Point(servoOffButton.Left - 8 - servoOnButton.Width, 16);
+                modeSegment.Location = new Point(servoOnButton.Left - 20 - modeSegment.Width, 16);
             }
 
             // ---------- 5. 图表 | 日志 ----------
@@ -793,19 +808,39 @@ namespace DHT11
             if (chartPanel != null) chartPanel.Invalidate();
         }
 
-        // 标题栏底部 1px 分隔线
+        // 顶部横幅绘制: 温室实拍(cover 裁剪) + 深绿纱罩, 白字可读
         private void HeaderPanel_Paint(object sender, PaintEventArgs e)
         {
-            using (Pen pen = new Pen(Color.FromArgb(230, 235, 241), 1))
+            Graphics g = e.Graphics;
+            g.SmoothingMode = SmoothingMode.AntiAlias;
+            Rectangle full = headerPanel.ClientRectangle;
+
+            Image banner = LoadIconSafely("ICON\\banner-greenhouse.jpg");
+            if (banner != null)
             {
-                e.Graphics.DrawLine(pen, 0, headerPanel.Height - 1, headerPanel.Width, headerPanel.Height - 1);
+                float scale = Math.Max((float)full.Width / banner.Width, (float)full.Height / banner.Height);
+                int w = (int)(banner.Width * scale), h = (int)(banner.Height * scale);
+                RectangleF srcWin = new RectangleF((w - full.Width) / 2f, (h - full.Height) / 2f, full.Width, full.Height);
+                g.DrawImage(banner, full, srcWin.X, srcWin.Y, srcWin.Width, srcWin.Height, GraphicsUnit.Pixel);
+            }
+
+            using (LinearGradientBrush scrim = new LinearGradientBrush(full,
+                Color.FromArgb(150, 9, 44, 27), Color.FromArgb(60, 12, 52, 32), 0f))
+            {
+                g.FillRectangle(scrim, full);
+            }
+
+            // 底缘 1px 高光线, 与下方内容区分层
+            using (Pen pen = new Pen(Color.FromArgb(40, 255, 255, 255), 1))
+            {
+                g.DrawLine(pen, 0, full.Height - 1, full.Width, full.Height - 1);
             }
         }
 
         // 连接卡片里两行之间的分隔线
         private void ConnectPanel_Paint(object sender, PaintEventArgs e)
         {
-            using (Pen pen = new Pen(Color.FromArgb(238, 241, 246), 1))
+            using (Pen pen = new Pen(AppTheme.Divider, 1))
             {
                 e.Graphics.DrawLine(pen, 16, 69, connectPanel.Width - 16, 69);
             }
@@ -833,10 +868,10 @@ namespace DHT11
         /// </summary>
         private sealed class CardPanel : Panel
         {
-            private static readonly Color StrokeColor = Color.FromArgb(228, 232, 238);
+            private static readonly Color StrokeColor = AppTheme.CardStroke;
 
             public Color AccentColor { get; set; } = Color.Transparent;
-            public int Radius { get; set; } = 10;
+            public int Radius { get; set; } = AppTheme.RadiusCard;
             public bool ShowAccent { get; set; }
 
             public CardPanel()
@@ -877,24 +912,17 @@ namespace DHT11
             }
         }
 
-        // 创建样式化按钮
-        private Button CreateStyledButton(string text, Point location, Size size, Color backColor)
+        // 创建样式化按钮(统一圆角/悬停/按压态, 见 RoundedButton)
+        private RoundedButton CreateStyledButton(string text, Point location, Size size, Color backColor)
         {
-            Button btn = new Button
+            return new RoundedButton
             {
                 Text = text,
                 Location = location,
                 Size = size,
-                BackColor = backColor,
-                ForeColor = Color.White,
-                FlatStyle = FlatStyle.Flat,
-                Font = new Font("微软雅黑", 9F, FontStyle.Bold),
-                Cursor = Cursors.Hand
+                FillColor = backColor,
+                TextColor = Color.White
             };
-            btn.FlatAppearance.BorderSize = 0;
-            btn.FlatAppearance.MouseOverBackColor = ControlPaint.Light(backColor, 0.2f);
-            btn.FlatAppearance.MouseDownBackColor = ControlPaint.Dark(backColor, 0.1f);
-            return btn;
         }
 
         // 安全加载图标
@@ -1761,12 +1789,12 @@ namespace DHT11
             // 绘制图例
             DrawLegend(g, right - 150, top);
 
-            // 绘制标题
-            using (var titleFont = new Font("微软雅黑", 11F, FontStyle.Bold))
-            using (var titleBrush = new SolidBrush(darkColor))
+            // 绘制标题(右上角图例上方, 避免与左侧 Y 轴单位标签重叠)
+            using (var titleFont = new Font("微软雅黑", 9F, FontStyle.Bold))
+            using (var titleBrush = new SolidBrush(textSecondaryColor))
             {
                 string title = $"数据点数: {_tempHistory.Count}/{MaxHistoryPoints}";
-                g.DrawString(title, titleFont, titleBrush, left, top - 25);
+                g.DrawString(title, titleFont, titleBrush, right - 150, top - 27);
             }
         }
 
