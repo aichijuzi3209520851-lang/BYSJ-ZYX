@@ -1,41 +1,67 @@
 /**
  * 智能温室大棚监测 · 全局设计规范
  *
- * 设计原则(stitch-design-taste):
- *  - 单一强调色: 温室绿 #1E8E55, 禁止霓虹/紫蓝渐变
- *  - 中性画布 #F4F7F4 承载内容, 卡片留白呼吸感, 1px 低对比描边
- *  - 层级靠字重与颜色, 不靠超大字号; 数字用等宽数字特性
- *  - 禁止 emoji 当图标: 一律使用 images/ICON 目录下的 PNG 素材
- *  - 触控目标最小 88rpx(≈44px); 动效只用 transform/opacity
+ * 设计阅读: 清新植物系 + 液态玻璃主题。
+ * 玻璃方法论来自 My-Skills/UI/LCW-UI-YTBL 五层光学模型(环境光/画布亮度/
+ * 白雾/厚度链/blur 增强), 参数为其实证拐点值, 详见 styles/liquid-glass.wxss。
+ *
+ * 视觉参数: 画布 = 温室实拍(降饱和) + 绿白纱罩抬升 + 莫兰迪光斑;
+ * 卡片 = 玻璃(fill 0.10 + blur 22px), 浮层 strong 档(0.88)。
+ * 色彩锁: 单一强调色 清新翡翠绿 #14875C; 墨色禁纯黑。
+ * 形状锁: 卡片 28rpx / 内层 20rpx / 小控件 16rpx / 按钮与徽章胶囊 999rpx。
+ * 禁止: emoji 图标、纯黑、紫蓝渐变、霓虹发光、三列等宽卡片、糖果彩虹光斑。
  */
+
+@import "./styles/liquid-glass.wxss";
 
 /* ---------- 设计令牌 ---------- */
 page {
-  /* 画布与表面 */
-  --bg-canvas: #F4F7F4;        /* 页面画布: 带绿调的暖白 */
+  /* 画布与表面(作为玻璃的恒等降级底色, P23) */
+  --bg-canvas: #F2F7F4;        /* 页面画布: 清透薄荷白 */
   --bg-surface: #FFFFFF;       /* 卡片表面 */
-  --bg-wash: #E8F5EE;          /* 强调色浅底(标签/选中态) */
+  --bg-wash: #E1F3E9;          /* 强调色浅底 */
+  --bg-subtle: #EAF1EC;        /* 中性分段底 */
 
-  /* 墨色(禁止纯黑) */
-  --ink-primary: #182720;      /* 主文字: 绿调炭黑 */
-  --ink-secondary: #6D7C74;    /* 次级文字: 灰绿 */
-  --ink-tertiary: #9AA8A0;     /* 辅助/占位文字 */
+  /* 墨色(禁止纯黑); tertiary 已压深 ~8% 保证玻璃底可读 */
+  --ink-primary: #11251C;      /* 主文字: 深绿炭黑 */
+  --ink-secondary: #5C7167;    /* 次级文字 */
+  --ink-tertiary: #667A70;     /* 辅助文字 */
 
   /* 描边与分隔 */
-  --border-hair: rgba(24, 39, 32, 0.08);
+  --border-hair: rgba(17, 37, 28, 0.10);
 
   /* 唯一强调色 */
-  --accent: #1E8E55;           /* 温室绿: CTA/激活/聚焦 */
-  --accent-pressed: #176E42;   /* 按压态加深 */
+  --accent: #14875C;           /* 清新翡翠绿: CTA / 激活 / 聚焦 */
+  --accent-pressed: #0E6B47;
+  --accent-soft: rgba(20, 135, 92, 0.10);
+  --accent-line: rgba(20, 135, 92, 0.30);
 
-  /* 语义警示色(仅用于报警, 不参与装饰) */
-  --alarm: #D64545;
-  --alarm-wash: #FBECEC;
-  --amber: #C77700;
+  /* 语义色(仅用于状态, 不参与装饰) */
+  --alarm: #B9473D;
+  --alarm-wash: #FBEDEA;
+  --alarm-line: rgba(185, 71, 61, 0.30);
+  --amber: #B5852C;
+  --info: #4E8FB5;
 
-  /* 圆角 */
+  /* 圆角尺 */
   --radius-card: 28rpx;
   --radius-inner: 20rpx;
+  --radius-sm: 16rpx;
+  --radius-pill: 999rpx;
+
+  /* ===== 液态玻璃派生令牌(字面值, 参数见 LCW-UI-YTBL parameters.md) ===== */
+  /* blur 半径只认 px, 禁 rpx(雷点 P4) */
+  --lg-blur: blur(22px) saturate(150%) brightness(1.04);
+  --lg-fill: rgba(255, 255, 255, 0.10);            /* 页面卡片 regular 档 */
+  --lg-fill-strong: rgba(255, 255, 255, 0.88);     /* 浮层 strong 档(P19) */
+  --lg-rim-width: 1.5rpx;                         /* 切面亮线 */
+  --lg-rim-outline: rgba(255, 255, 255, 0.95);
+  --lg-rim-top: rgba(255, 255, 255, 0.62);        /* 顶部受光(P13: α<1) */
+  --lg-inner-shade: rgba(30, 41, 70, 0.09);       /* 内收暗面 */
+  --lg-edge-dark: rgba(30, 41, 70, 0.10);         /* 暗描边 */
+  --lg-outer: 0 4rpx 12rpx -8rpx rgba(30, 41, 70, 0.12); /* 外落影只留接触感(P9) */
+  --lg-specular: linear-gradient(135deg, rgba(255, 255, 255, 0.26) 0%, rgba(255, 255, 255, 0) 9%);
+  --lg-refract: radial-gradient(120% 70% at 6% 0%, rgba(255, 255, 255, 0.22) 0%, rgba(255, 255, 255, 0) 42%);
 
   background-color: var(--bg-canvas);
   color: var(--ink-primary);
@@ -46,18 +72,69 @@ page {
   -webkit-font-smoothing: antialiased;
 }
 
+/* ---------- 页面环境光层(五层模型第①②层) ----------
+ * 结构: 温室实拍(降饱和) → 绿白纱罩(抬升画布亮度, 承载深色文字)
+ *       → 莫兰迪光斑(锐边圆盘: 卡外锐利 / 卡内被 blur 糊开 = 玻璃证据, P1/P2)
+ * 三页共用同一套样式, 仅照片 src 不同 */
+.page-bg {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 0;
+  overflow: hidden;
+  background-color: var(--bg-canvas);
+}
+
+.page-bg-photo {
+  width: 100%;
+  height: 100%;
+  filter: saturate(0.78) brightness(1.12);
+}
+
+.page-bg-scrim {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: linear-gradient(180deg,
+    rgba(242, 248, 244, 0.60) 0%,
+    rgba(239, 247, 242, 0.68) 40%,
+    rgba(231, 242, 236, 0.76) 100%);
+}
+
+/* 光斑层: 半径 22~40% + 55% 快收尾形成可见球边(P2), 部分跨卡片带 */
+.page-bg-glow {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-image:
+    radial-gradient(34% 20% at 4% 6%, rgba(154, 188, 140, 0.50) 0%, rgba(154, 188, 140, 0.39) 55%, rgba(154, 188, 140, 0) 100%),
+    radial-gradient(28% 17% at 98% 30%, rgba(246, 158, 96, 0.38) 0%, rgba(246, 158, 96, 0.30) 55%, rgba(246, 158, 96, 0) 100%),
+    radial-gradient(30% 18% at 10% 92%, rgba(116, 142, 216, 0.34) 0%, rgba(116, 142, 216, 0.27) 55%, rgba(116, 142, 216, 0) 100%),
+    radial-gradient(24% 14% at 88% 78%, rgba(96, 168, 214, 0.28) 0%, rgba(96, 168, 214, 0.22) 55%, rgba(96, 168, 214, 0) 100%),
+    radial-gradient(2.6% 1.2% at 22% 18%, rgba(255, 255, 255, 0.92) 0%, rgba(255, 255, 255, 0.72) 58%, rgba(255, 255, 255, 0) 100%),
+    radial-gradient(2.2% 1.0% at 64% 8%, rgba(255, 255, 255, 0.88) 0%, rgba(255, 255, 255, 0.69) 58%, rgba(255, 255, 255, 0) 100%),
+    radial-gradient(3.0% 1.4% at 42% 66%, rgba(255, 255, 255, 0.85) 0%, rgba(255, 255, 255, 0.66) 58%, rgba(255, 255, 255, 0) 100%);
+}
+
 .container {
+  position: relative;
+  z-index: 1;
   min-height: 100vh;
   box-sizing: border-box;
   padding: 24rpx 32rpx calc(48rpx + env(safe-area-inset-bottom));
 }
 
-/* ---------- 通用卡片 ---------- */
+/* ---------- 通用卡片(实体底由玻璃接管层覆盖, 此处保留恒等降级) ---------- */
 .card {
   background-color: var(--bg-surface);
   border-radius: var(--radius-card);
   border: 1rpx solid var(--border-hair);
-  box-shadow: 0 8rpx 24rpx rgba(24, 39, 32, 0.04);
   box-sizing: border-box;
 }
 
@@ -79,7 +156,22 @@ page {
   color: var(--ink-tertiary);
 }
 
-/* ---------- 通用按钮(触控目标 ≥ 88rpx, 按压态位移反馈) ---------- */
+/* ---------- 页面标题(单行, 极简) ---------- */
+.page-heading {
+  display: flex;
+  flex-direction: column;
+  margin: 0 4rpx 18rpx;
+}
+
+.page-heading-title {
+  font-size: 42rpx;
+  font-weight: 600;
+  letter-spacing: -0.5rpx;
+  line-height: 1.3;
+  color: var(--ink-primary);
+}
+
+/* ---------- 通用按钮(胶囊形, 触控目标 ≥ 88rpx, 按压位移反馈) ---------- */
 .btn-primary {
   display: flex;
   align-items: center;
@@ -90,7 +182,7 @@ page {
   color: #FFFFFF;
   font-size: 30rpx;
   font-weight: 600;
-  border-radius: var(--radius-inner);
+  border-radius: var(--radius-pill);
   border: none;
   transition: transform 0.12s ease, background-color 0.12s ease;
 }
@@ -110,12 +202,12 @@ page {
   justify-content: center;
   min-height: 88rpx;
   padding: 0 40rpx;
-  background-color: transparent;
+  background-color: rgba(255, 255, 255, 0.55);
   color: var(--accent);
   font-size: 30rpx;
   font-weight: 500;
-  border-radius: var(--radius-inner);
-  border: 1rpx solid rgba(30, 142, 85, 0.35);
+  border-radius: var(--radius-pill);
+  border: 1rpx solid var(--accent-line);
   transition: transform 0.12s ease, background-color 0.12s ease;
 }
 
@@ -128,7 +220,7 @@ page {
   transform: translateY(2rpx);
 }
 
-/* ---------- 呼吸点(在线状态的持续微动效, 仅用 opacity) ---------- */
+/* ---------- 呼吸点(仅用于真实连接状态, 只做透明度动效) ---------- */
 .pulse-dot {
   width: 14rpx;
   height: 14rpx;

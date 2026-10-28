@@ -7,14 +7,14 @@
   "window": {
     "navigationBarTextStyle": "black",
     "navigationBarTitleText": "智能温室大棚监测",
-    "navigationBarBackgroundColor": "#F4F7F4",
-    "backgroundColor": "#F4F7F4",
+    "navigationBarBackgroundColor": "#F2F7F4",
+    "backgroundColor": "#F2F7F4",
     "backgroundTextStyle": "dark",
     "enablePullDownRefresh": false
   },
   "tabBar": {
-    "color": "#6D7C74",
-    "selectedColor": "#1E8E55",
+    "color": "#5C7167",
+    "selectedColor": "#14875C",
     "backgroundColor": "#FFFFFF",
     "borderStyle": "white",
     "list": [

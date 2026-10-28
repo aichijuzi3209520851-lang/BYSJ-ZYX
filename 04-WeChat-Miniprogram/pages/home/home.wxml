@@ -1,9 +1,15 @@
 <!-- 首页 -->
-<view class="container">
+<view class="page-bg" aria-hidden="true">
+  <image class="page-bg-photo" src="/images/bg-home.jpg" mode="aspectFill" />
+  <view class="page-bg-scrim"></view>
+  <view class="page-bg-glow"></view>
+</view>
 
-  <!-- 顶部品牌区: 温室主题轮播背景 + 底部渐变遮罩, 文字固定压在下沿暗区 -->
+<view class="container home">
+
+  <!-- 封面: 温室实拍轮播, 文字压在下沿暗区 -->
   <view class="hero">
-    <swiper class="hero-swiper" autoplay="{{true}}" interval="4000" duration="500"
+    <swiper class="hero-swiper" autoplay="{{true}}" interval="5000" duration="450"
       circular="{{true}}" bindchange="onSlideChange">
       <swiper-item wx:for="{{slides}}" wx:key="id">
         <image class="hero-bg" src="{{item.src}}" mode="aspectFill" />
@@ -11,87 +17,50 @@
       </swiper-item>
     </swiper>
 
-    <view class="hero-content">
-      <view class="hero-badge">
-        <view class="pulse-dot hero-dot"></view>
-        <text class="hero-badge-text">系统运行中</text>
+    <!-- pointer-events: none 让触摸穿透到下层 swiper, 恢复手动滑动 -->
+    <view class="hero-body">
+      <view class="hero-copy">
+        <text class="hero-title">智能温室</text>
+        <text class="hero-sub">STM32 + MQTT 环境监测</text>
       </view>
-      <view class="hero-title-group">
-        <text class="hero-title">智能温室大棚监测</text>
-        <text class="hero-sub">Smart Greenhouse Monitoring</text>
-        <!-- 自定义轮播指示点 -->
-        <view class="hero-dots">
-          <view wx:for="{{slides}}" wx:key="id"
-            class="hero-dot-ind {{currentSlide === index ? 'hero-dot-ind--on' : ''}}"></view>
-        </view>
+      <view class="hero-dots">
+        <view wx:for="{{slides}}" wx:key="id"
+          class="hero-dot-ind {{currentSlide === index ? 'hero-dot-ind--on' : ''}}"></view>
       </view>
     </view>
   </view>
 
-  <!-- 欢迎卡片 -->
-  <view class="card welcome">
-    <text class="welcome-text">
-      基于 STM32 与 MQTT 的温室环境监测系统，实时采集温湿度、土壤湿度与空气质量，报警联动天窗与风扇。
-    </text>
-  </view>
-
-  <!-- 功能列表: 纵向行式布局(替代千篇一律的三列卡片) -->
-  <view class="feature card">
-    <view class="feature-row">
-      <image class="feature-icon" src="/ICON/温度.png" mode="aspectFit" />
-      <view class="feature-body">
-        <text class="feature-title">实时监测</text>
-        <text class="feature-desc t-sub">温湿度 / 土壤湿度 / 空气质量采集，1.5 秒一帧</text>
-      </view>
-    </view>
-    <view class="feature-divider"></view>
-    <view class="feature-row">
-      <image class="feature-icon" src="/ICON/风扇-关状态.png" mode="aspectFit" />
-      <view class="feature-body">
-        <text class="feature-title">智能联动</text>
-        <text class="feature-desc t-sub">超标自动开窗通风、排风，多 LED 与蜂鸣器声光报警</text>
-      </view>
-    </view>
-    <view class="feature-divider"></view>
-    <view class="feature-row">
-      <image class="feature-icon" src="/ICON/蜂鸣器-关状态.png" mode="aspectFit" />
-      <view class="feature-body">
-        <text class="feature-title">远程监测</text>
-        <text class="feature-desc t-sub">EMQX 消息中间件分发，手机端查看数据并开关天窗风扇</text>
-      </view>
-    </view>
-  </view>
-
-  <!-- 系统信息 -->
-  <view class="card meta">
-    <view class="meta-item">
-      <text class="meta-label">系统版本</text>
-      <text class="meta-value">V1.2</text>
-    </view>
-    <view class="meta-divider"></view>
-    <view class="meta-item">
-      <text class="meta-label">传感器</text>
-      <text class="meta-value">3 类</text>
-    </view>
-    <view class="meta-divider"></view>
-    <view class="meta-item">
-      <text class="meta-label">报警阈值</text>
-      <text class="meta-value">三端统一</text>
-    </view>
-  </view>
-
-  <!-- 开发者信息 -->
-  <view class="card author">
+  <!-- 开发者署名(深绿名片, 视觉锚点) -->
+  <view class="author">
     <image class="author-avatar" src="/ICON/周颖暄.jpg" mode="aspectFill" />
     <view class="author-body">
       <text class="author-name">周颖暄</text>
-      <text class="t-caption">毕业设计 · 物联网方向</text>
+      <text class="author-role">毕业设计 · 物联网方向</text>
     </view>
+    <text class="author-tag">作者</text>
   </view>
 
-  <!-- 主操作: 全宽唯一 CTA -->
-  <button class="btn-primary cta" bindtap="goToSensor">
-    进入传感器监测
-  </button>
+  <!-- 双入口: 环境数据 / 设备控制 -->
+  <view class="entry-grid">
+    <view class="entry entry--data" hover-class="entry--hover" bindtap="goToSensor">
+      <view class="entry-icon-wrap">
+        <image class="entry-icon" src="/ICON/温度.png" mode="aspectFit" />
+      </view>
+      <view class="entry-copy">
+        <text class="entry-title">环境数据</text>
+        <text class="entry-meta">实时监测</text>
+      </view>
+    </view>
+
+    <view class="entry entry--control" hover-class="entry--hover" bindtap="goToActuator">
+      <view class="entry-icon-wrap">
+        <image class="entry-icon" src="/ICON/风扇-开状态.png" mode="aspectFit" />
+      </view>
+      <view class="entry-copy">
+        <text class="entry-title">设备控制</text>
+        <text class="entry-meta">天窗 · 风扇</text>
+      </view>
+    </view>
+  </view>
 
 </view>

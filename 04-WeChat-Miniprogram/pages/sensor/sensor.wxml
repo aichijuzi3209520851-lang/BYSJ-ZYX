@@ -1,5 +1,15 @@
 <!-- 传感器数据页 -->
+<view class="page-bg" aria-hidden="true">
+  <image class="page-bg-photo" src="/images/bg-sensor.jpg" mode="aspectFill" />
+  <view class="page-bg-scrim"></view>
+  <view class="page-bg-glow"></view>
+</view>
+
 <view class="container">
+
+  <view class="page-heading">
+    <text class="page-heading-title">传感器</text>
+  </view>
 
   <!-- 连接状态栏 -->
   <view class="conn-bar card {{mqttConnected ? 'conn-bar--on' : ''}}">
@@ -7,7 +17,7 @@
       <view class="pulse-dot {{mqttConnected ? '' : 'conn-dot--off'}}"></view>
       <view class="conn-text">
         <text class="conn-title">{{mqttConnected ? '已连接 EMQX' : (connecting ? '连接中…' : '未连接服务器')}}</text>
-        <text class="conn-sub t-caption">{{mqttConnected ? mqttTopic : '点击右侧配置填入服务器与主题'}}</text>
+        <text class="conn-sub t-caption" wx:if="{{mqttConnected}}">{{mqttTopic}}</text>
       </view>
     </view>
     <button class="conn-btn {{mqttConnected ? 'conn-btn--ghost' : ''}}" size="mini"
@@ -28,67 +38,81 @@
   <!-- 数据卡片网格 -->
   <view class="grid">
     <!-- 温度 -->
-    <view class="cell card {{sensorData.temperature > thresholds.temperature ? 'cell--alarm' : ''}}">
-      <image class="cell-icon"
-        src="{{sensorData.temperature > thresholds.temperature ? '/ICON/温度_报警状态.png' : '/ICON/温度.png'}}"
-        mode="aspectFit" />
-      <text class="cell-name">温度</text>
+    <view class="cell card cell--primary {{sensorData.temperature > thresholds.temperature ? 'cell--alarm' : ''}}">
+      <view class="cell-head">
+        <view class="cell-icon-wrap">
+          <image class="cell-icon"
+            src="{{sensorData.temperature > thresholds.temperature ? '/ICON/温度_报警状态.png' : '/ICON/温度.png'}}"
+            mode="aspectFit" />
+        </view>
+        <text class="cell-name">温度</text>
+      </view>
       <text class="cell-value">{{sensorData.temperature == null ? '--' : sensorData.temperature}}<text class="cell-unit">°C</text></text>
-      <text class="cell-hint t-caption">阈值 >{{thresholds.temperature}}°C</text>
     </view>
 
     <!-- 湿度 -->
-    <view class="cell card {{sensorData.humidity > thresholds.humidity ? 'cell--alarm' : ''}}">
-      <image class="cell-icon"
-        src="{{sensorData.humidity > thresholds.humidity ? '/ICON/湿度_报警状态.png' : '/ICON/湿度.png'}}"
-        mode="aspectFit" />
-      <text class="cell-name">空气湿度</text>
+    <view class="cell card cell--primary {{sensorData.humidity > thresholds.humidity ? 'cell--alarm' : ''}}">
+      <view class="cell-head">
+        <view class="cell-icon-wrap">
+          <image class="cell-icon"
+            src="{{sensorData.humidity > thresholds.humidity ? '/ICON/湿度_报警状态.png' : '/ICON/湿度.png'}}"
+            mode="aspectFit" />
+        </view>
+        <text class="cell-name">空气湿度</text>
+      </view>
       <text class="cell-value">{{sensorData.humidity == null ? '--' : sensorData.humidity}}<text class="cell-unit">%RH</text></text>
-      <text class="cell-hint t-caption">阈值 >{{thresholds.humidity}}%</text>
     </view>
 
     <!-- 土壤湿度 -->
     <view class="cell card {{sensorData.soilMoisture > thresholds.soilMoisture ? 'cell--alarm' : ''}}">
-      <image class="cell-icon"
-        src="{{sensorData.soilMoisture > thresholds.soilMoisture ? '/ICON/水位_报警状态.png' : '/ICON/水位.png'}}"
-        mode="aspectFit" />
-      <text class="cell-name">土壤湿度</text>
+      <view class="cell-head">
+        <view class="cell-icon-wrap">
+          <image class="cell-icon"
+            src="{{sensorData.soilMoisture > thresholds.soilMoisture ? '/ICON/水位_报警状态.png' : '/ICON/水位.png'}}"
+            mode="aspectFit" />
+        </view>
+        <text class="cell-name">土壤湿度</text>
+      </view>
       <text class="cell-value">{{sensorData.soilMoisture == null ? '--' : sensorData.soilMoisture}}<text class="cell-unit">%</text></text>
-      <text class="cell-hint t-caption">过湿阈值 >{{thresholds.soilMoisture}}%</text>
     </view>
 
     <!-- 光照强度(仅采集展示, 与固件 Light.h 一致: 不参与报警联动) -->
     <view class="cell card">
-      <image class="cell-icon" src="/ICON/光照.png" mode="aspectFit" />
-      <text class="cell-name">光照强度</text>
+      <view class="cell-head">
+        <view class="cell-icon-wrap">
+          <image class="cell-icon" src="/ICON/光照.png" mode="aspectFit" />
+        </view>
+        <text class="cell-name">光照强度</text>
+      </view>
       <text class="cell-value">{{sensorData.lightPercent == null ? '--' : sensorData.lightPercent}}<text class="cell-unit">%</text></text>
-      <text class="cell-hint t-caption">光敏电阻 · 仅展示</text>
     </view>
 
-    <!-- 空气质量(占满整行: 状态型文案, 宽度富余更适合横向排布) -->
-    <view class="cell cell--wide card {{sensorData.airQuality === 'bad' ? 'cell--alarm' : ''}}">
-      <image class="cell-icon" src="{{sensorData.airQuality === 'bad' ? '/ICON/空气质量劣状态.png' : '/ICON/空气质量优状态.png'}}" mode="aspectFit" />
+    <!-- 空气质量(占满整行) -->
+    <view class="cell cell--wide card {{sensorData.airQuality === 'bad' ? 'cell--alarm' : ''}} {{sensorData.airQuality === 'nice' ? 'cell--nice' : ''}}">
+      <view class="cell-icon-wrap cell-icon-wrap--wide">
+        <image class="cell-icon" src="{{sensorData.airQuality === 'bad' ? '/ICON/空气质量劣状态.png' : '/ICON/空气质量优状态.png'}}" mode="aspectFit" />
+      </view>
       <view class="cell-wide-body">
         <text class="cell-name">空气质量</text>
         <text class="cell-value cell-value--text">{{sensorData.airQuality === 'bad' ? '污染' : (sensorData.airQuality === 'nice' ? '良好' : '--')}}</text>
-        <text class="cell-hint t-caption">烟雾传感器判定</text>
       </view>
     </view>
   </view>
 
-  <!-- 设备控制入口: 天窗/风扇控制已迁移至执行器页 -->
+  <!-- 设备控制入口 -->
   <view class="actuator-entry card" bindtap="goToActuator" hover-class="actuator-entry--hover">
-    <image class="actuator-entry-icon" src="/ICON/风扇-关状态.png" mode="aspectFit" />
+    <view class="actuator-entry-icon-wrap">
+      <image class="actuator-entry-icon" src="/ICON/风扇-关状态.png" mode="aspectFit" />
+    </view>
     <view class="actuator-entry-body">
       <text class="actuator-entry-title">天窗 / 风扇控制</text>
-      <text class="t-caption">手动开关设备, 请前往「执行器」页</text>
     </view>
     <text class="actuator-entry-arrow">›</text>
   </view>
 
   <!-- 更新时间 -->
   <view class="update-row" wx:if="{{lastUpdateTime}}">
-    <text class="t-caption">最后更新 {{lastUpdateTime}} · 1.5s/次</text>
+    <text class="t-caption">最后更新 {{lastUpdateTime}}</text>
   </view>
 
   <!-- ==================== 配置弹窗 ==================== -->

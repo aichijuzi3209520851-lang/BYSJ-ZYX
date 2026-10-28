@@ -1,12 +1,11 @@
 // pages/home/home.js
 Page({
   data: {
-    // 首页Hero轮播图(图片均来自Pexels, 免费商用无需署名)
+    // 封面轮播: 三张明亮的温室实拍(晨露苗株 / 天窗通风 / 金色时刻)
     slides: [
-      { id: 'greenhouse', src: '/images/hero-greenhouse.jpg' },   // 拱形大棚纵览
-      { id: 'tomato',     src: '/images/hero-tomato.jpg' },       // 温室番茄行栽
-      { id: 'strawberry', src: '/images/hero-strawberry.jpg' },   // 草莓大棚种植
-      { id: 'smartfarm',  src: '/images/hero-smartfarm.jpg' }     // LED垂直农场(智慧农业)
+      { id: 'dew',    src: '/images/hero-dew.jpg' },
+      { id: 'vent',   src: '/images/hero-vent.jpg' },
+      { id: 'golden', src: '/images/hero-golden.jpg' }
     ],
     currentSlide: 0
   },
@@ -20,10 +19,17 @@ Page({
     this.setData({ currentSlide: e.detail.current })
   },
 
-  // 跳转到传感器页面
+  // 进入传感器页
   goToSensor() {
     wx.switchTab({
       url: '/pages/sensor/sensor'
+    })
+  },
+
+  // 进入执行器页
+  goToActuator() {
+    wx.switchTab({
+      url: '/pages/actuator/actuator'
     })
   }
 })

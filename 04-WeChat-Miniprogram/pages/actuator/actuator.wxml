@@ -1,5 +1,15 @@
 <!-- 执行器控制页 -->
+<view class="page-bg" aria-hidden="true">
+  <image class="page-bg-photo" src="/images/bg-actuator.jpg" mode="aspectFill" />
+  <view class="page-bg-scrim"></view>
+  <view class="page-bg-glow"></view>
+</view>
+
 <view class="container">
+
+  <view class="page-heading">
+    <text class="page-heading-title">执行器</text>
+  </view>
 
   <!-- 连接状态栏 -->
   <view class="conn-bar card {{mqttConnected ? 'conn-bar--on' : ''}}">
@@ -7,7 +17,7 @@
       <view class="pulse-dot {{mqttConnected ? '' : 'conn-dot--off'}}"></view>
       <view class="conn-text">
         <text class="conn-title">{{mqttConnected ? '已连接 EMQX' : (connecting ? '连接中…' : '未连接服务器')}}</text>
-        <text class="conn-sub t-caption">{{mqttConnected ? mqttTopic : '点击右侧配置填入服务器与主题'}}</text>
+        <text class="conn-sub t-caption" wx:if="{{mqttConnected}}">{{mqttTopic}}</text>
       </view>
     </view>
     <button class="conn-btn {{mqttConnected ? 'conn-btn--ghost' : ''}}" size="mini"
@@ -20,7 +30,6 @@
   <view class="card mode-card">
     <view class="mode-head">
       <text class="mode-title">控制模式</text>
-      <text class="t-caption">固件上电默认自动</text>
     </view>
 
     <view class="mode-seg">
@@ -33,19 +42,17 @@
         <text>手动控制</text>
       </view>
     </view>
-
-    <text class="mode-desc t-caption">{{mode === 'auto'
-      ? '设备按统一阈值自主开关天窗与风扇, 无需人工干预'
-      : '由下方按钮直接开关天窗与风扇, 覆盖联动策略'}}</text>
   </view>
 
   <!-- 设备控制卡片 -->
   <view class="grid">
     <!-- 天窗(舵机) -->
-    <view class="device card">
-      <image class="device-icon"
-        src="{{device.servoStatus === 'ON' ? '/ICON/窗户-开状态.png' : '/ICON/窗户-关状态.png'}}"
-        mode="aspectFit" />
+    <view class="device card {{device.servoStatus === 'ON' ? 'device--on' : ''}}">
+      <view class="device-icon-wrap">
+        <image class="device-icon"
+          src="{{device.servoStatus === 'ON' ? '/ICON/窗户-开状态.png' : '/ICON/窗户-关状态.png'}}"
+          mode="aspectFit" />
+      </view>
       <text class="device-name">天窗</text>
       <view class="device-chip {{device.servoStatus === 'ON' ? 'device-chip--on' : ''}}">
         <view class="chip-dot"></view>
@@ -57,14 +64,15 @@
         <button class="dev-btn dev-btn--close {{mode !== 'manual' ? 'dev-btn--disabled' : ''}}"
           hover-class="dev-btn-hover" bindtap="onWindowClose">关闭</button>
       </view>
-      <text class="device-hint t-caption">舵机 0° / 180°</text>
     </view>
 
     <!-- 风扇(电机) -->
-    <view class="device card">
-      <image class="device-icon"
-        src="{{device.motorStatus === 'ON' ? '/ICON/风扇-开状态.png' : '/ICON/风扇-关状态.png'}}"
-        mode="aspectFit" />
+    <view class="device card {{device.motorStatus === 'ON' ? 'device--on' : ''}}">
+      <view class="device-icon-wrap">
+        <image class="device-icon"
+          src="{{device.motorStatus === 'ON' ? '/ICON/风扇-开状态.png' : '/ICON/风扇-关状态.png'}}"
+          mode="aspectFit" />
+      </view>
       <text class="device-name">风扇</text>
       <view class="device-chip {{device.motorStatus === 'ON' ? 'device-chip--on' : ''}}">
         <view class="chip-dot"></view>
@@ -76,7 +84,6 @@
         <button class="dev-btn dev-btn--close {{mode !== 'manual' ? 'dev-btn--disabled' : ''}}"
           hover-class="dev-btn-hover" bindtap="onFanOff">停止</button>
       </view>
-      <text class="device-hint t-caption">烟雾联动排风</text>
     </view>
   </view>
 
@@ -86,15 +93,10 @@
       <text class="cmd-label">最近指令</text>
       <text class="cmd-value">{{lastCmd ? lastCmd.text : '暂无'}}</text>
     </view>
-    <view class="cmd-row" wx:if="{{lastCmd}}">
-      <text class="cmd-label">下发时间</text>
-      <text class="cmd-value">{{lastCmd.time}}</text>
-    </view>
     <view class="cmd-row" wx:if="{{lastUpdateTime}}">
       <text class="cmd-label">状态更新</text>
       <text class="cmd-value">{{lastUpdateTime}}</text>
     </view>
-    <text class="cmd-link t-caption">链路: 小程序 → EMQX({{controlTopic}}) → 上位机 → 串口 → STM32</text>
   </view>
 
   <!-- ==================== 配置弹窗 ==================== -->

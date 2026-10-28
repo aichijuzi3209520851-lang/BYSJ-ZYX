@@ -1,0 +1,111 @@
+/**
+ * 液态玻璃材质层 —— 依据 My-Skills/UI/LCW-UI-YTBL(橘记JUJI) 五层光学模型
+ * 五层: ①页面环境光(.page-bg, 见 app.wxss) ②画布亮度(scrim 抬升)
+ *       ③白雾 fill --lg-fill:0.10  ④厚度 inset 链(box-shadow 五件套)
+ *       ⑤blur 增强层(仅支持 backdrop-filter 的环境生效, 基线不依赖它)
+ * 雷点遵循: P4 blur 只用 px / P10 @supports 用 or / P11 双类接管既有容器 /
+ *           P13 rimTop α=0.62 / P15 选中态 tint 玻璃 / P19 浮层用 strong 档 /
+ *           P9 外落影只留接触感 / P23 旧主题恒等降级(全部 token 带字面 fallback)
+ */
+
+/* ===== 1. 通用玻璃面板 ===== */
+.lg-panel.lg-panel {
+  background-color: var(--lg-fill, rgba(255, 255, 255, 0.10));
+  background-image: var(--lg-specular, none), var(--lg-refract, none);
+  background-repeat: no-repeat, no-repeat;
+  background-size: 100% 100%, 100% 100%;
+  outline: var(--lg-rim-width, 0) solid var(--lg-rim-outline, transparent);
+  outline-offset: -2rpx;
+  box-shadow:
+    inset 0 1.5rpx 0 var(--lg-rim-top, transparent),
+    inset 0 -1px 2px var(--lg-inner-shade, transparent),
+    inset 0 0 0 1px var(--lg-edge-dark, transparent),
+    var(--lg-outer, none);
+  -webkit-backdrop-filter: var(--lg-blur, none);
+  backdrop-filter: var(--lg-blur, none);
+}
+
+/* ===== 2. blur 增强层: @supports 必须 or(P10, and = 永不生效) ===== */
+@supports ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .lg-panel.lg-panel {
+    -webkit-backdrop-filter: var(--lg-blur, blur(22px) saturate(150%) brightness(1.04));
+    backdrop-filter: var(--lg-blur, blur(22px) saturate(150%) brightness(1.04));
+  }
+}
+
+/* ===== 3. 接管层(P11: 双类提特异性, 零业务类名改动) =====
+ * regular 档(页面卡片): 覆盖 .card 系全部常规容器 */
+.card.card,
+.cell.cell,
+.entry.entry,
+.conn-bar.conn-bar,
+.mode-card.mode-card,
+.device.device,
+.cmd-log.cmd-log,
+.actuator-entry.actuator-entry,
+.alarm-banner.alarm-banner {
+  background-color: var(--lg-fill, rgba(255, 255, 255, 0.10));
+  background-image: var(--lg-specular, none), var(--lg-refract, none);
+  background-repeat: no-repeat, no-repeat;
+  background-size: 100% 100%, 100% 100%;
+  outline: var(--lg-rim-width, 0) solid var(--lg-rim-outline, transparent);
+  outline-offset: -2rpx;
+  box-shadow:
+    inset 0 1.5rpx 0 var(--lg-rim-top, transparent),
+    inset 0 -1px 2px var(--lg-inner-shade, transparent),
+    inset 0 0 0 1px var(--lg-edge-dark, transparent),
+    var(--lg-outer, none);
+  -webkit-backdrop-filter: var(--lg-blur, none);
+  backdrop-filter: var(--lg-blur, none);
+}
+
+/* blur 增强层同样作用于接管容器 */
+@supports ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .card.card,
+  .cell.cell,
+  .entry.entry,
+  .conn-bar.conn-bar,
+  .mode-card.mode-card,
+  .device.device,
+  .cmd-log.cmd-log,
+  .actuator-entry.actuator-entry,
+  .alarm-banner.alarm-banner {
+    -webkit-backdrop-filter: var(--lg-blur, blur(22px) saturate(150%) brightness(1.04));
+    backdrop-filter: var(--lg-blur, blur(22px) saturate(150%) brightness(1.04));
+  }
+}
+
+/* ===== 4. strong 档(P19: 浮层透字风险, fill 0.88) =====
+ * 放在 regular 接管层之后, 双类同为 2 级特异性, 后者胜出 */
+.modal.modal {
+  background-color: var(--lg-fill-strong, rgba(255, 255, 255, 0.88));
+  background-image: var(--lg-specular, none), var(--lg-refract, none);
+  background-repeat: no-repeat, no-repeat;
+  background-size: 100% 100%, 100% 100%;
+  outline: var(--lg-rim-width, 0) solid var(--lg-rim-outline, transparent);
+  outline-offset: -2rpx;
+  box-shadow:
+    inset 0 1.5rpx 0 var(--lg-rim-top, transparent),
+    inset 0 -1px 2px var(--lg-inner-shade, transparent),
+    inset 0 0 0 1px var(--lg-edge-dark, transparent),
+    0 12rpx 40rpx rgba(17, 37, 28, 0.14);
+  -webkit-backdrop-filter: var(--lg-blur, none);
+  backdrop-filter: var(--lg-blur, none);
+}
+
+@supports ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .modal.modal {
+    -webkit-backdrop-filter: var(--lg-blur, blur(22px) saturate(150%) brightness(1.04));
+    backdrop-filter: var(--lg-blur, blur(22px) saturate(150%) brightness(1.04));
+  }
+}
+
+/* ===== 5. 语义变体: 报警 tint 玻璃(P15: tint 而非实色) ===== */
+.cell--alarm.cell--alarm {
+  background-color: rgba(185, 71, 61, 0.14);
+  background-image: var(--lg-specular, none), var(--lg-refract, none);
+}
+
+/* ===== 6. 刻意不做玻璃的类(避免塑料感/不可读, 保留实色) =====
+ * .author(首页署名深绿名片, 视觉锚点) / .field-input / .history-item(浮层内小控件)
+ * .photo-band 相关已随页面改版移除; tabBar 为原生组件不处理 */
