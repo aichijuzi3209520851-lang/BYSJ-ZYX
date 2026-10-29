@@ -11,6 +11,8 @@ namespace IotLinkLab
         // ---------- 品牌色 ----------
         public static readonly Color Primary = Color.FromArgb(21, 128, 61);       // 土绿
         public static readonly Color PrimaryDark = Color.FromArgb(14, 89, 44);
+        public static readonly Color PrimaryTint = Color.FromArgb(240, 253, 244); // 薄荷白底 #F0FDF4
+        public static readonly Color PrimarySoft = Color.FromArgb(220, 252, 231); // 浅薄荷 #DCFCE7
         public static readonly Color OnPrimary = Color.FromArgb(252, 253, 252);   // 主色上的近白文字
         public static readonly Color Teal = Color.FromArgb(13, 148, 136);        // 链路青(数据方向)
         public static readonly Color Indigo = Color.FromArgb(79, 70, 229);       // 指令靛(下行)
@@ -37,10 +39,19 @@ namespace IotLinkLab
         // ---------- 布局尺度(96 DPI 逻辑像素) ----------
         public const int RadiusCard = 12;
         public const int RadiusButton = 8;
+        public const int RadiusInput = 8;
         public const int HeightButton = 32;
         public const int HeightInput = 32;
         public const int HeightNav = 32;
         public const int HeightSmallButton = 28;
+        public const int HeightTopBar = 56;
+        public const int HeightTopBarCompact = 52;
+        public const int HeightStatusBar = 26;
+        public const int HeightStatusBarCompact = 24;
+        public const int HeightLogCollapsed = 34;
+        public const int HeightLogCollapsedCompact = 32;
+        public const int HeightStateBar = 52;
+        public const int HeightStateBarCompact = 48;
         public const int GapXs = 4;
         public const int GapSm = 8;
         public const int GapMd = 12;
@@ -53,5 +64,11 @@ namespace IotLinkLab
 
         public static Font Mono(float size, bool bold = false)
             => new Font("Consolas", size, bold ? FontStyle.Bold : FontStyle.Regular);
+
+        // ---------- 字体层级(只保留 5 档) ----------
+        public static Font Title() => Ui(14F, bold: true);
+        public static Font Section() => Ui(10.5F, bold: true);
+        public static Font Body() => Ui(9.5F);
+        public static Font Meta() => Ui(8.5F);
     }
 }

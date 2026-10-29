@@ -22,16 +22,26 @@ namespace IotLinkLab
             Text = title;
             StartPosition = FormStartPosition.CenterParent;
             BackColor = Theme.PageBg;
-            Font = Theme.Ui(9F);
+            Font = Theme.Body();
+            AutoScaleMode = AutoScaleMode.None;
             MinimizeBox = false;
             ShowInTaskbar = false;
 
-            Rectangle wa = Screen.PrimaryScreen?.WorkingArea ?? new Rectangle(0, 0, 1280, 720);
-            Size = new Size(Math.Min(900, wa.Width - 80), Math.Min(640, wa.Height - 60));
-            MinimumSize = new Size(560, 360);
+            Rectangle wa = Screen.PrimaryScreen?.WorkingArea ?? new Rectangle(0, 0, UiFit.S(1280), UiFit.S(720));
+            Size = new Size(Math.Min(UiFit.S(900), wa.Width - UiFit.S(80)), Math.Min(UiFit.S(640), wa.Height - UiFit.S(60)));
+            MinimumSize = new Size(UiFit.S(560), UiFit.S(360));
 
             BuildUi(hint);
             LoadContent();
+        }
+
+        /// <summary>焦点放到正文末尾, 避免只读路径框首次获得焦点时整段被蓝色反选。</summary>
+        protected override void OnShown(EventArgs e)
+        {
+            base.OnShown(e);
+            _content.SelectionStart = _content.TextLength;
+            _content.SelectionLength = 0;
+            _content.Focus();
         }
 
         private void BuildUi(string hint)
@@ -39,51 +49,53 @@ namespace IotLinkLab
             var root = new TableLayoutPanel
             {
                 Dock = DockStyle.Fill, RowCount = 3, ColumnCount = 1,
-                BackColor = Theme.PageBg, Padding = new Padding(14, 12, 14, 12)
+                BackColor = Theme.PageBg, Padding = new Padding(UiFit.S(Theme.GapLg), UiFit.S(Theme.GapMd), UiFit.S(Theme.GapLg), UiFit.S(Theme.GapMd))
             };
             root.RowStyles.Add(new RowStyle(SizeType.AutoSize));   // 路径 + 提示
             root.RowStyles.Add(new RowStyle(SizeType.Percent, 100f));
-            root.RowStyles.Add(new RowStyle(SizeType.Absolute, 46));
+            root.RowStyles.Add(new RowStyle(SizeType.Absolute, UiFit.S(48)));
 
             // ---------- 路径与说明 ----------
-            var head = new TableLayoutPanel { Dock = DockStyle.Fill, AutoSize = true, ColumnCount = 1, RowCount = 3, BackColor = Color.Transparent };
+            var head = new TableLayoutPanel { Dock = DockStyle.Fill, AutoSize = true, ColumnCount = 1, RowCount = 3, BackColor = Color.Transparent, Margin = new Padding(0) };
             head.RowStyles.Add(new RowStyle(SizeType.AutoSize));
             head.RowStyles.Add(new RowStyle(SizeType.AutoSize));
             head.RowStyles.Add(new RowStyle(SizeType.AutoSize));
 
             var pathBox = new TextBox
             {
-                Dock = DockStyle.Top, ReadOnly = true, Font = Theme.Mono(9F),
-                BackColor = Theme.FieldBg, BorderStyle = BorderStyle.FixedSingle,
+                ReadOnly = true, Font = Theme.Mono(9F), HideSelection = true, TabStop = false,
+                BackColor = Theme.FieldBg, BorderStyle = BorderStyle.None,
                 Text = _path
             };
-            head.Controls.Add(pathBox, 0, 0);
+            var pathShell = new FieldShell(pathBox) { Dock = DockStyle.Top, Height = UiFit.S(Theme.HeightInput), Margin = new Padding(0) };
+            head.Controls.Add(pathShell, 0, 0);
 
             var hintLabel = new Label
             {
-                Text = hint, AutoSize = true, MaximumSize = new Size(820, 0),
-                Font = Theme.Ui(8.5F), ForeColor = Theme.TextTertiary, Margin = new Padding(1, 6, 0, 0)
+                Text = hint, AutoSize = true, MaximumSize = new Size(UiFit.S(820), 0),
+                Font = Theme.Meta(), ForeColor = Theme.TextTertiary, Margin = new Padding(0, UiFit.S(Theme.GapSm), 0, 0)
             };
             head.Controls.Add(hintLabel, 0, 1);
 
             _meta = new Label
             {
-                Text = "", AutoSize = true, Font = Theme.Ui(8.5F, bold: true),
-                ForeColor = Theme.TextSecondary, Margin = new Padding(1, 4, 0, 6)
+                Text = "", AutoSize = true, Font = Theme.Meta(), ForeColor = Theme.TextSecondary,
+                Margin = new Padding(0, UiFit.S(Theme.GapXs), 0, UiFit.S(Theme.GapSm))
             };
             head.Controls.Add(_meta, 0, 2);
 
             root.Controls.Add(head, 0, 0);
 
             // ---------- 内容 ----------
-            var card = new Card { Dock = DockStyle.Fill, Padding = new Padding(8) };
+            var card = new Card { Dock = DockStyle.Fill, Padding = new Padding(UiFit.S(Theme.GapSm)) };
             _content = new TextBox
             {
                 Dock = DockStyle.Fill, Multiline = true, ReadOnly = true, WordWrap = false,
                 ScrollBars = ScrollBars.Both, BackColor = Theme.FieldBg,
                 Font = Theme.Mono(9F), BorderStyle = BorderStyle.None
             };
-            card.Controls.Add(_content);
+            var contentShell = new FieldShell(_content, multiline: true) { Dock = DockStyle.Fill, Margin = new Padding(0) };
+            card.Controls.Add(contentShell);
             root.Controls.Add(card, 0, 1);
 
             // ---------- 底部操作 ----------
@@ -93,15 +105,15 @@ namespace IotLinkLab
                 WrapContents = false, BackColor = Color.Transparent, Margin = new Padding(0)
             };
 
-            var btnClose = new RoundedButton { Text = "关闭", Outline = true, FillColor = Theme.TextSecondary, TextColor = Theme.TextSecondary, Margin = new Padding(8, 10, 0, 0) };
+            var btnClose = new RoundedButton { Text = "关闭", Outline = true, FillColor = Theme.TextSecondary, TextColor = Theme.TextSecondary, Margin = new Padding(UiFit.S(Theme.GapSm), UiFit.S(Theme.GapSm), 0, 0) };
             btnClose.Click += (s, e) => Close();
             UiFit.SizeButton(btnClose, 44);
 
-            var btnFolder = new RoundedButton { Text = "打开所在文件夹", Outline = true, FillColor = Theme.Teal, TextColor = Theme.Teal, Margin = new Padding(8, 10, 0, 0) };
+            var btnFolder = new RoundedButton { Text = "打开所在文件夹", Outline = true, FillColor = Theme.Teal, TextColor = Theme.Teal, Margin = new Padding(UiFit.S(Theme.GapSm), UiFit.S(Theme.GapSm), 0, 0) };
             btnFolder.Click += (s, e) => OpenFolder();
             UiFit.SizeButton(btnFolder, 40);
 
-            var btnSaveAs = new RoundedButton { Text = "另存为…", FillColor = Theme.Primary, Margin = new Padding(8, 10, 0, 0) };
+            var btnSaveAs = new RoundedButton { Text = "另存为…", FillColor = Theme.Primary, Margin = new Padding(UiFit.S(Theme.GapSm), UiFit.S(Theme.GapSm), 0, 0) };
             btnSaveAs.Click += (s, e) => SaveAs();
             UiFit.SizeButton(btnSaveAs, 40);
 

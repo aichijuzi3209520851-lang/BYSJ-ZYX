@@ -9,6 +9,29 @@ namespace IotLinkLab
         public const TextFormatFlags MeasureFlags =
             TextFormatFlags.NoPadding | TextFormatFlags.SingleLine | TextFormatFlags.NoPrefix;
 
+        // 当前 DPI(未显式设置时取屏幕 DPI), 供行高/边距等“没有控件引用”的场景换算
+        private static int _dpi;
+
+        public static void SetDpi(int dpi)
+        {
+            if (dpi > 0) _dpi = dpi;
+        }
+
+        private static int Dpi()
+        {
+            if (_dpi > 0) return _dpi;
+            try
+            {
+                using var g = Graphics.FromHwnd(IntPtr.Zero);
+                _dpi = Math.Max(96, (int)Math.Round(g.DpiX));
+            }
+            catch { _dpi = 96; }
+            return _dpi;
+        }
+
+        /// <summary>逻辑像素 → 物理像素(按当前 DPI), 用于高度/边距/图标尺寸。</summary>
+        public static int S(int logical) => (int)Math.Round(logical * (Dpi() / 96.0));
+
         public static int Scale(Control c, int v)
             => (int)Math.Round(v * (c.DeviceDpi / 96.0));
 
@@ -59,8 +82,18 @@ namespace IotLinkLab
             n.Width = textW + arrows + Scale(n, padTotal);
         }
 
+        /// <summary>单行输入框: 按样本文案实测宽度 + 左右留白。</summary>
+        public static void FitTextBox(TextBox t, string sample, int padTotal = 26)
+        {
+            int textW = TextWidth(sample, t.Font);
+            t.Width = Math.Max(Scale(t, 72), textW + Scale(t, 8) + Scale(t, padTotal));
+        }
+
+        /// <summary>把控件放在网格单元的正中(同时垂直/水平居中, 不再用手写 Margin.Top 找基线)。</summary>
+        public static void Center(Control c) => c.Anchor = AnchorStyles.None;
+
         /// <summary>把「标签 + 输入框」做成一行, 供流式/网格布局复用。</summary>
-        public static Label FieldLabel(string text, float size = 9F) => new()
+        public static Label FieldLabel(string text, float size = 9.5F) => new()
         {
             Text = text, AutoSize = true, Font = Theme.Ui(size),
             ForeColor = Theme.TextSecondary, Anchor = AnchorStyles.Left,
@@ -69,8 +102,8 @@ namespace IotLinkLab
 
         public static Label SectionTitle(string text) => new()
         {
-            Text = text, AutoSize = true, Font = Theme.Ui(9.5F, bold: true),
-            ForeColor = Theme.TextSecondary, Margin = new Padding(0, 0, 0, 6)
+            Text = text, AutoSize = true, Font = Theme.Section(),
+            ForeColor = Theme.TextPrimary, Margin = new Padding(0, 0, 0, 8)
         };
     }
 }

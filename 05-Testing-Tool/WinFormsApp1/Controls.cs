@@ -24,7 +24,7 @@ namespace IotLinkLab
                    | ControlStyles.SupportsTransparentBackColor, true);
             BackColor = Color.Transparent;
             Cursor = Cursors.Hand;
-            Font = Theme.Ui(9F, bold: true);
+            Font = Theme.Ui(9.5F, bold: true);
             Size = new Size(96, Theme.HeightButton);
         }
 
@@ -85,7 +85,7 @@ namespace IotLinkLab
         }
     }
 
-    /// <summary>白底圆角卡片容器。</summary>
+    /// <summary>白底圆角卡片容器。Region 与圆角路径一致, 避免四角露出方形底色。</summary>
     public class Card : Panel
     {
         [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
@@ -96,6 +96,26 @@ namespace IotLinkLab
                    | ControlStyles.UserPaint | ControlStyles.ResizeRedraw, true);
             BackColor = Theme.CardBg;
         }
+
+        protected override void OnResize(EventArgs e)
+        {
+            base.OnResize(e);
+            UpdateRegion();
+        }
+
+        private void UpdateRegion()
+        {
+            if (Width <= 0 || Height <= 0) return;
+            try
+            {
+                using var path = RoundedButton.CreateRoundedPath(new Rectangle(0, 0, Width, Height), Radius);
+                var old = Region;
+                Region = new Region(path);
+                old?.Dispose();
+            }
+            catch { /* 极端尺寸下保持方形, 不影响布局 */ }
+        }
+
         protected override void OnPaint(PaintEventArgs e)
         {
             var g = e.Graphics;
@@ -104,6 +124,119 @@ namespace IotLinkLab
             using var path = RoundedButton.CreateRoundedPath(rect, Radius);
             using (var b = new SolidBrush(BackColor)) g.FillPath(b, path);
             using (var pen = new Pen(Theme.CardStroke, 1)) g.DrawPath(pen, path);
+            base.OnPaint(e);
+        }
+    }
+
+    /// <summary>
+    /// 圆角输入容器: 统一承载 TextBox / ComboBox / NumericUpDown / RichTextBox。
+    /// 内部控件去掉系统边框并居中, 焦点时容器描边转品牌绿, 解决“直角输入框嵌在圆角卡里”的割裂感。
+    /// </summary>
+    public class FieldShell : Panel
+    {
+        private readonly Control _inner;
+        private readonly bool _multiline;
+        private bool _hover;
+
+        [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
+        public int Radius { get; set; } = Theme.RadiusInput;
+
+        public Control Inner => _inner;
+
+        public FieldShell(Control inner, bool multiline = false, int height = 0)
+        {
+            SetStyle(ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer
+                   | ControlStyles.UserPaint | ControlStyles.ResizeRedraw
+                   | ControlStyles.SupportsTransparentBackColor, true);
+            _inner = inner;
+            _multiline = multiline;
+            BackColor = Color.Transparent;
+            Padding = new Padding(0);
+            Height = height > 0 ? height : UiFit.S(Theme.HeightInput);
+            Margin = new Padding(0);
+
+            if (inner is TextBox tb)
+            {
+                tb.BorderStyle = BorderStyle.None;
+                tb.BackColor = Theme.FieldBg;
+            }
+            if (inner is RichTextBox rtb)
+            {
+                rtb.BorderStyle = BorderStyle.None;
+                rtb.BackColor = Theme.FieldBg;
+            }
+            if (inner is ComboBox cb)
+            {
+                cb.FlatStyle = FlatStyle.Flat;
+                cb.BackColor = Theme.FieldBg;
+            }
+            if (inner is NumericUpDown nu)
+            {
+                nu.BorderStyle = BorderStyle.None;
+                nu.BackColor = Theme.FieldBg;
+            }
+            if (inner is ListView lv)
+            {
+                lv.BorderStyle = BorderStyle.None;
+                lv.BackColor = Theme.FieldBg;
+            }
+
+            Controls.Add(inner);
+            if (multiline)
+            {
+                Padding = new Padding(UiFit.S(8), UiFit.S(6), UiFit.S(8), UiFit.S(6));
+                inner.Dock = DockStyle.Fill;
+            }
+
+            inner.Enter += (s, e) => Invalidate();
+            inner.Leave += (s, e) => Invalidate();
+            inner.GotFocus += (s, e) => Invalidate();
+            inner.LostFocus += (s, e) => Invalidate();
+
+            MouseEnter += (s, e) => { _hover = true; Invalidate(); };
+            MouseLeave += (s, e) => { _hover = false; Invalidate(); };
+            MouseDown += (s, e) => { _inner.Focus(); };
+            Cursor = Cursors.IBeam;
+        }
+
+        protected override void OnResize(EventArgs e)
+        {
+            base.OnResize(e);
+            LayoutInner();
+        }
+
+        protected override void OnLayout(LayoutEventArgs e)
+        {
+            base.OnLayout(e);
+            LayoutInner();
+        }
+
+        private void LayoutInner()
+        {
+            if (_inner == null || _inner.IsDisposed) return;
+            if (_multiline) return;   // Dock=Fill 已由 Padding 控制内缩
+
+            int padX = UiFit.S(8);
+            int w = Math.Max(0, ClientSize.Width - padX * 2);
+            int h = _inner.PreferredSize.Height;
+            if (h <= 0 || h > ClientSize.Height) h = Math.Min(_inner.Height, ClientSize.Height);
+            _inner.SetBounds(padX, Math.Max(0, (ClientSize.Height - h) / 2), w, Math.Max(1, h));
+        }
+
+        protected override void OnPaint(PaintEventArgs e)
+        {
+            var g = e.Graphics;
+            g.SmoothingMode = SmoothingMode.AntiAlias;
+            var rect = new Rectangle(0, 0, Width - 1, Height - 1);
+            using (var path = RoundedButton.CreateRoundedPath(rect, Radius))
+            {
+                using (var b = new SolidBrush(Theme.FieldBg)) g.FillPath(b, path);
+                Color stroke = _inner.Focused
+                    ? Theme.Primary
+                    : _hover ? Color.FromArgb(150, Theme.Primary) : Theme.CardStroke;
+                using (var pen = new Pen(stroke, _inner.Focused ? 1.6f : 1f))
+                    g.DrawPath(pen, path);
+            }
             base.OnPaint(e);
         }
     }
@@ -118,7 +251,7 @@ namespace IotLinkLab
         {
             SetStyle(ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer
                    | ControlStyles.UserPaint | ControlStyles.ResizeRedraw, true);
-            Font = Theme.Ui(9F, bold: true);
+            Font = Theme.Ui(9.5F, bold: true);
             ResizeText();
         }
 
