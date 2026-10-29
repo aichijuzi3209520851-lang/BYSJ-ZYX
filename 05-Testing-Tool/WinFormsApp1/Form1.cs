@@ -781,11 +781,19 @@ namespace IotLinkLab
                 using var doc = JsonDocument.Parse(File.ReadAllText(file));
                 var r = doc.RootElement;
                 if (r.TryGetProperty("host", out var v)) _hostBox.Text = v.GetString() ?? _hostBox.Text;
-                if (r.TryGetProperty("port", out var v2)) _portBox.Text = v2.GetString() ?? _portBox.Text;
+                // 端口兼容数字与字符串两种写法: 本程序存的是字符串, 但手改过 settings.json 的人
+                // 很自然写成 "port": 1883 (数字)。原实现直接 GetString() 会在数字上抛
+                // InvalidOperationException, 被外层 catch 吞掉后 host/主题/协议全部静默丢失。
+                if (r.TryGetProperty("port", out var v2))
+                {
+                    _portBox.Text = v2.ValueKind == JsonValueKind.Number
+                        ? v2.GetInt32().ToString()
+                        : (v2.GetString() ?? _portBox.Text);
+                }
                 if (r.TryGetProperty("dataTopic", out var v4)) _dataTopicBox.Text = v4.GetString() ?? _dataTopicBox.Text;
                 if (r.TryGetProperty("controlTopic", out var v5)) _controlTopicBox.Text = v5.GetString() ?? _controlTopicBox.Text;
                 // useWs 放最后: 它会触发端口自动切换, 不能覆盖已恢复的端口
-                if (r.TryGetProperty("useWs", out var v3) && v3.GetBoolean()) _protoCombo.SelectedIndex = 1;
+                if (r.TryGetProperty("useWs", out var v3) && v3.ValueKind == JsonValueKind.True) _protoCombo.SelectedIndex = 1;
             }
             catch { /* 设置损坏时用默认值 */ }
         }
