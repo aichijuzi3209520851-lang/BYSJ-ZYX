@@ -111,8 +111,8 @@ namespace IotLinkLab
             AppPaths.EnsureAll();
             _formTips = new ToolTip { AutoPopDelay = 15000, InitialDelay = 350, ReshowDelay = 150 };
 
-            // 顶部固定区域收敛到 52 + 92 + 40 = 184, 把释放出的高度让给当前功能页
-            _bannerH = 52;
+            // 顶部固定区域收敛到 48 + 84 + 36 = 168, 把释放出的高度让给当前功能页
+            _bannerH = 48;
 
             var root = new TableLayoutPanel
             {
@@ -120,8 +120,8 @@ namespace IotLinkLab
                 Margin = new Padding(0), Padding = new Padding(0)
             };
             root.RowStyles.Add(new RowStyle(SizeType.Absolute, _bannerH));
-            root.RowStyles.Add(new RowStyle(SizeType.Absolute, 92));
-            root.RowStyles.Add(new RowStyle(SizeType.Absolute, 40));   // 导航条
+            root.RowStyles.Add(new RowStyle(SizeType.Absolute, 84));
+            root.RowStyles.Add(new RowStyle(SizeType.Absolute, 36));   // 导航条
             root.RowStyles.Add(new RowStyle(SizeType.Percent, 100));   // 内容 + 日志(可拖动)
 
             // ---------- 1. 顶部横幅 ----------
@@ -227,7 +227,7 @@ namespace IotLinkLab
             var navChips = new FlowLayoutPanel
             {
                 Dock = DockStyle.Fill, BackColor = Color.Transparent, WrapContents = false,
-                Padding = new Padding(16, 4, 0, 0), Margin = new Padding(0)
+                Padding = new Padding(16, 2, 0, 0), Margin = new Padding(0)
             };
             string[] names = { "① 设备模拟器 · 上行", "② 订阅监控台", "③ 控制台 · 下行" };
             for (int i = 0; i < names.Length; i++)
@@ -243,7 +243,7 @@ namespace IotLinkLab
             {
                 Text = "快捷键 F1-F11", AutoSize = true, Font = Theme.Ui(8.5F),
                 ForeColor = Theme.TextTertiary, Anchor = AnchorStyles.Right,
-                Margin = new Padding(0, 12, 16, 0)
+                Margin = new Padding(0, 10, 16, 0)
             };
             _formTips.SetToolTip(shortcutLabel,
                 "F1/F2/F3 切换页面\nF4 发一帧\nF5 连接 / F6 断开\nF7 查看日志 / F8 导出数据\nF11 最大化");
