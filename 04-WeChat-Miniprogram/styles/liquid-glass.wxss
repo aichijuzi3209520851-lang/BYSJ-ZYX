@@ -10,7 +10,7 @@
 
 /* ===== 1. 通用玻璃面板 ===== */
 .lg-panel.lg-panel {
-  background-color: var(--lg-fill, rgba(255, 255, 255, 0.10));
+  background-color: var(--lg-fill, rgba(255, 255, 255, 0.50));
   background-image: var(--lg-specular, none), var(--lg-refract, none);
   background-repeat: no-repeat, no-repeat;
   background-size: 100% 100%, 100% 100%;
@@ -44,7 +44,7 @@
 .cmd-log.cmd-log,
 .actuator-entry.actuator-entry,
 .alarm-banner.alarm-banner {
-  background-color: var(--lg-fill, rgba(255, 255, 255, 0.10));
+  background-color: var(--lg-fill, rgba(255, 255, 255, 0.50));
   background-image: var(--lg-specular, none), var(--lg-refract, none);
   background-repeat: no-repeat, no-repeat;
   background-size: 100% 100%, 100% 100%;

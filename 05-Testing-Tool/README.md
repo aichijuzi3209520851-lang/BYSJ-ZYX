@@ -20,6 +20,12 @@
 | --- | --- |
 | ![E2E 回显](./screenshots/e2e-echo.png) | ![小程序回显](./screenshots/e2e-actuator-echo.png) |
 
+**数据导出**
+
+| 导出数据（`F8`）→ CSV | 查看日志（`F7`）→ 完整落盘日志 |
+| --- | --- |
+| ![数据导出](./screenshots/export-data.png) | ![运行日志](./screenshots/export-logfile.png) |
+
 ## 三页功能
 
 ### ① 设备模拟器（上行链路）
@@ -81,10 +87,27 @@ Soil:(\d+)% / Light:(\d+)% / Servo:(ON|OFF) / Motor:(ON|OFF) / Mode:(AUTO|MAN) /
 
 界面按 **1280×720 逻辑分辨率（1920×1200 屏 @150% 缩放）** 设计并实测，窗口尺寸自动收敛到屏幕可用区域：
 
-- 顶部：温室横幅（高度按字体实测计算，任何 DPI 不裁字）→ 连接配置两行卡 → 导航胶囊
-- 主区：**左卡双栏**（场景预设+基础数值 | 发送控制+串口输出）+ 底部整宽"设备状态"条；**右卡三段**（① 帧文本 / ② 解析与 JSON / ③ 帧模板编辑）
-- 底部：分级着色的运行日志
-- 快捷键：`F5` 连接 / `F6` 断开
+- 顶部：温室横幅（等比铺满 + 品牌标识，高度按字体实测计算，任何 DPI 不裁字）→ 连接配置两行卡 → 导航胶囊
+- 主区：**左卡双栏**（场景预设+基础数值 | 发送控制+串口输出）+ 底部整宽"设备状态"条；**右卡三段**（① 帧预览 / ② JSON 预览 / ③ 帧模板只读展示）
+- 底部：可拖拽分隔的**运行日志区**（默认占 72% 主区高度，随窗口按比例重算，不会被挤出可视区）
+- **控件尺寸按内容实测**：下拉框/数字框宽度由 `UiFit` 用 GDI 文字度量算出，不写死像素；按钮宽度同理。
+  `WebSocket` 不会再被截成 `WebSocke`，`raw=4095` 也不会只剩 `208`。
+- 快捷键：`F1/F2/F3` 切页 / `F4` 立发一帧 / `F5` 连接 / `F6` 断开 / `F7` 查看日志 / `F8` 导出数据 / `F11` 最大化
+
+## 数据导出
+
+界面日志框只保留最近 500 行，**完整记录始终落盘**，两者都从「运行日志」卡片一键查看：
+
+| 按钮 | 行为 |
+| --- | --- |
+| 查看日志（`F7`） | 打开完整会话日志 `%APPDATA%\IotLinkLab\logs\session-*.log`，支持另存为、打开所在文件夹 |
+| 导出数据（`F8`） | 把本次会话的上行帧 / 下行指令 / 订阅消息导出为 **CSV** → `%APPDATA%\IotLinkLab\exports\data-*.csv` |
+| 复制 | 复制当前日志框内容到剪贴板 |
+| 清空 | 只清界面日志框，不影响已落盘的日志文件 |
+
+CSV 为 **UTF-8 带 BOM**（Excel 直接打开不乱码），列：`时间,方向,主题,温度℃,湿度%RH,土壤%,光照%,raw,天窗,风扇,模式,空气质量,报警,帧文本,载荷`。
+订阅行也会被解析填列（JSON 载荷与原始串口帧文本两种格式都认），字段内的换行已压平，一条记录就是一行。
+
 
 ## 快速开始
 
@@ -112,16 +135,26 @@ Soil:(\d+)% / Light:(\d+)% / Servo:(ON|OFF) / Motor:(ON|OFF) / Mode:(AUTO|MAN) /
 ```
 ├── WinFormsApp1.csproj   # net10.0-windows, MQTTnet 4.3.7 + System.IO.Ports
 ├── Program.cs            # 入口
-├── Form1.cs              # 主窗体: 横幅/连接栏/三页导航/日志/设置持久化
-├── Theme.cs             # 设计令牌(浅色科技风, 与上位机同一套温室绿语言)
-├── Controls.cs          # RoundedButton / Card / StatusChip 自绘控件
-├── FrameCodec.cs        # 协议核心: 帧模板渲染 / 正则解析 / JSON 构建(可复用)
-├── MqttLink.cs         # MQTT 服务: TCP/WS 双协议 + 指数退避重连
-├── SimulatorTab.cs    # ① 设备模拟器(含串口输出/固件回显)
-├── MonitorTab.cs      # ② 订阅监控台
-├── ControlTab.cs      # ③ 控制台
-└── assets/banner.jpg   # 顶部横幅图
+├── Form1.cs              # 主窗体: 横幅/连接栏/三页导航/可拖拽日志区/快捷键/设置持久化
+├── Theme.cs              # 设计令牌(浅色科技风, 与上位机同一套温室绿语言)
+├── Controls.cs           # RoundedButton / Card / StatusChip / NavChip 自绘控件
+├── UiFit.cs              # 按 GDI 实测文字宽度定控件尺寸(下拉框/数字框/按钮不截字)
+├── FrameCodec.cs         # 协议核心: 帧模板渲染 / 正则解析 / JSON 构建(可复用)
+├── MqttLink.cs           # MQTT 服务: TCP/WS 双协议 + 指数退避重连
+├── LogStore.cs           # 运行日志落盘: %APPDATA%\IotLinkLab\logs\session-*.log
+├── DataStore.cs          # 数据记录与 CSV 导出: %APPDATA%\IotLinkLab\exports\data-*.csv
+├── ExportDialog.cs       # 查看/另存/定位导出文件的通用对话框
+├── SimulatorTab.cs       # ① 设备模拟器(含串口输出/固件回显)
+├── MonitorTab.cs         # ② 订阅监控台
+├── ControlTab.cs         # ③ 控制台
+├── icon/                 # 应用图标源文件(7 档 ico + 各尺寸预览 + 生成/校验脚本)
+└── assets/               # banner.jpg(横幅) / app-mark.png(界面标识) / icons/(状态小图标)
 ```
+
+> 图标设计说明见 `icon/NOTES.md`：母题是"串口线上的一次信号跳变"，与 EMQX 启动器图标
+> （青色对角渐变 + 弧形 WiFi + 纸飞机）在色相、轴向、笔画形态上三重区分。
+> 自检脚本 `icon/verify_icon.py` 覆盖帧结构、AND mask、逐档尺寸与"不与 EMQX 图标同内容"共 101 项断言。
+
 
 ## 图片素材来源（Pexels 免费商用）
 

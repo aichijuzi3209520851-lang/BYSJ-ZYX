@@ -81,7 +81,7 @@
 
 .hero-sub {
   margin-top: 8rpx;
-  font-size: 23rpx;
+  font-size: 26rpx;
   letter-spacing: 1rpx;
   color: rgba(255, 255, 255, 0.80);
 }
@@ -136,7 +136,7 @@
 }
 
 .author-name {
-  font-size: 36rpx;
+  font-size: 38rpx;
   font-weight: 600;
   letter-spacing: 1rpx;
   color: #FFFFFF;
@@ -144,14 +144,14 @@
 
 .author-role {
   margin-top: 4rpx;
-  font-size: 22rpx;
+  font-size: 26rpx;
   color: rgba(255, 255, 255, 0.68);
 }
 
 .author-tag {
   flex-shrink: 0;
   padding: 6rpx 16rpx;
-  font-size: 20rpx;
+  font-size: 26rpx;
   letter-spacing: 2rpx;
   color: #E9FFF3;
   background-color: rgba(255, 255, 255, 0.12);
@@ -186,7 +186,7 @@
 }
 
 .entry--control.entry--control {
-  background-color: var(--lg-fill, rgba(255, 255, 255, 0.10));
+  background-color: var(--lg-fill, rgba(255, 255, 255, 0.50));
 }
 
 .entry--hover {
@@ -224,7 +224,7 @@
 }
 
 .entry-title {
-  font-size: 32rpx;
+  font-size: 34rpx;
   font-weight: 600;
   letter-spacing: 0.5rpx;
   color: var(--ink-primary);
@@ -232,6 +232,28 @@
 
 .entry-meta {
   margin-top: 2rpx;
-  font-size: 22rpx;
+  font-size: 26rpx;
   color: var(--ink-secondary);
+}
+
+/* ---------- 退出登录(低调文字入口, 与双入口拉开层级) ---------- */
+.logout-row {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  align-self: center;
+  min-height: 72rpx;
+  margin-top: 18rpx;
+  padding: 0 32rpx;
+  border-radius: var(--radius-pill);
+}
+
+.logout-row--hover {
+  background-color: var(--accent-soft);
+}
+
+.logout-text {
+  font-size: 26rpx;
+  letter-spacing: 1rpx;
+  color: var(--ink-tertiary);
 }

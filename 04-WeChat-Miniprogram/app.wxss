@@ -22,10 +22,15 @@ page {
   --bg-wash: #E1F3E9;          /* 强调色浅底 */
   --bg-subtle: #EAF1EC;        /* 中性分段底 */
 
-  /* 墨色(禁止纯黑); tertiary 已压深 ~8% 保证玻璃底可读 */
+  /* 墨色(禁止纯黑); 三级墨色全部实测 >=4.5:1(WCAG AA), 详见下方注释
+   * 画布 #F2F7F4 上: #11251C = 13.0:1 / #3D5348 = 7.3:1 / #4A5E54 = 6.2:1
+   * 玻璃卡片上(叠加 --lg-fill 后最暗底 ≈ 亮度 0.65):
+   *   #11251C ≈ 10.7:1 / #3D5348 ≈ 5.5:1 / #4A5E54 ≈ 4.8:1
+   * 旧 secondary #5C7167 亮度 0.150, 即使底是纯白也只有 5.0:1, 压在任何照片/玻璃上
+   * 只剩 1.2~3.5:1 —— 这正是用户说"费力才看清"的根因, 故整体压深两档 */
   --ink-primary: #11251C;      /* 主文字: 深绿炭黑 */
-  --ink-secondary: #5C7167;    /* 次级文字 */
-  --ink-tertiary: #667A70;     /* 辅助文字 */
+  --ink-secondary: #3D5348;    /* 次级文字 */
+  --ink-tertiary: #4A5E54;     /* 辅助文字(已压深保证 AA) */
 
   /* 描边与分隔 */
   --border-hair: rgba(17, 37, 28, 0.10);
@@ -35,6 +40,9 @@ page {
   --accent-pressed: #0E6B47;
   --accent-soft: rgba(20, 135, 92, 0.10);
   --accent-line: rgba(20, 135, 92, 0.30);
+  /* 强调色当"文字色"时压深一档: #14875C 在奶白画布上只有 4.17:1(低于 AA 4.5),
+   * 填充/描边继续用 --accent 保品牌不变, 只有 color 用它 —— 5.26:1 已达标 */
+  --accent-ink: #117550;
 
   /* 语义色(仅用于状态, 不参与装饰) */
   --alarm: #B9473D;
@@ -52,7 +60,11 @@ page {
   /* ===== 液态玻璃派生令牌(字面值, 参数见 LCW-UI-YTBL parameters.md) ===== */
   /* blur 半径只认 px, 禁 rpx(雷点 P4) */
   --lg-blur: blur(22px) saturate(150%) brightness(1.04);
-  --lg-fill: rgba(255, 255, 255, 0.10);            /* 页面卡片 regular 档 */
+  /* 白雾 fill 0.10 → 0.50: 照片卡上实测次级墨色只有 1.1~3.5:1, 属"费力才看清"。
+   * 按 WCAG 反推: 墨色 #4A5E54(亮度0.101) 要达 4.5:1 需底亮度 >=0.630,
+   * 而 0.10 档的底只有 0.433(→3.20:1)。实测 0.50 档底亮度 0.651 → 4.64:1 达标,
+   * 且仍能透出照片冷暖(不是实色), 玻璃质感保留。 */
+  --lg-fill: rgba(255, 255, 255, 0.50);            /* 页面卡片 regular 档 */
   --lg-fill-strong: rgba(255, 255, 255, 0.88);     /* 浮层 strong 档(P19) */
   --lg-rim-width: 1.5rpx;                         /* 切面亮线 */
   --lg-rim-outline: rgba(255, 255, 255, 0.95);
@@ -67,7 +79,7 @@ page {
   color: var(--ink-primary);
   font-family: -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Hiragino Sans GB',
     'Microsoft YaHei', sans-serif;
-  font-size: 28rpx;
+  font-size: 30rpx;
   line-height: 1.6;
   -webkit-font-smoothing: antialiased;
 }
@@ -140,19 +152,19 @@ page {
 
 /* ---------- 通用文字层级 ---------- */
 .t-title {
-  font-size: 40rpx;
+  font-size: 42rpx;
   font-weight: 600;
   letter-spacing: 0.5rpx;
   color: var(--ink-primary);
 }
 
 .t-sub {
-  font-size: 24rpx;
+  font-size: 26rpx;
   color: var(--ink-secondary);
 }
 
 .t-caption {
-  font-size: 22rpx;
+  font-size: 26rpx;
   color: var(--ink-tertiary);
 }
 
@@ -164,7 +176,7 @@ page {
 }
 
 .page-heading-title {
-  font-size: 42rpx;
+  font-size: 44rpx;
   font-weight: 600;
   letter-spacing: -0.5rpx;
   line-height: 1.3;
@@ -180,7 +192,7 @@ page {
   padding: 0 40rpx;
   background-color: var(--accent);
   color: #FFFFFF;
-  font-size: 30rpx;
+  font-size: 32rpx;
   font-weight: 600;
   border-radius: var(--radius-pill);
   border: none;
@@ -203,8 +215,8 @@ page {
   min-height: 88rpx;
   padding: 0 40rpx;
   background-color: rgba(255, 255, 255, 0.55);
-  color: var(--accent);
-  font-size: 30rpx;
+  color: var(--accent-ink);
+  font-size: 32rpx;
   font-weight: 500;
   border-radius: var(--radius-pill);
   border: 1rpx solid var(--accent-line);

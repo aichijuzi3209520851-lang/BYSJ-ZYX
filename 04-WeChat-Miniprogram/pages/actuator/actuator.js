@@ -6,6 +6,7 @@
 //   DUOJ-0 / DUOJ-1           天窗关(0°) / 天窗开(180°) —— 仅手动模式生效
 //   MOTOR-0 / MOTOR-1         风扇停 / 风扇全速 —— 仅手动模式生效
 const { createMqttClient } = require('../../utils/mqtt')
+const { guardLogin } = require('../../utils/auth')
 
 const CONTROL_TOPIC = 'green/control'   // 指令发布主题, 与上位机订阅主题一致
 const HISTORY_KEY = 'mqtt_history'      // 与传感器页共用同一份连接历史
@@ -35,7 +36,9 @@ Page({
   _activeConfig: null,    // 当前连接所用配置(判断配置是否变化)
   _manualClosed: false,   // 用户在本页主动断开标记
 
+  // 首行先做登录守卫: tabBar 页面可被直接切换进来, 未登录则 reLaunch 回登录页
   onShow() {
+    if (!guardLogin()) return
     this.loadConfig()
     this.loadHistory()
     this.tryAutoConnect()

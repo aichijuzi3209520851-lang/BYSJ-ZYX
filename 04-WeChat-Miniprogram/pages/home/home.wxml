@@ -63,4 +63,9 @@
     </view>
   </view>
 
+  <!-- 退出登录: 低调文字入口, 不抢双入口的视觉重心 -->
+  <view class="logout-row" hover-class="logout-row--hover" bindtap="onLogout">
+    <text class="logout-text">退出登录</text>
+  </view>
+
 </view>

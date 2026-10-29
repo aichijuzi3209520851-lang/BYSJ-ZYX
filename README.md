@@ -24,7 +24,7 @@ PC 上位机通过串口解析后经 MQTT 上云，微信小程序订阅数据�
                        │  发布 green/control ▼
 ┌────────────────────────────────────────────┐
 │         EMQX MQTT Broker (5.0.26)          │
-│     MQTT:1883 · WS:8083 · 控制台:18083     │
+│     MQTT:1883 · WS:8083 · 控制台:18200     │
 └────────────────────────────────────────────┘
                        │  green/data (JSON,QoS1) ▲
                        │  green/control 透传 ▼
@@ -49,7 +49,7 @@ PC 上位机通过串口解析后经 MQTT 上云，微信小程序订阅数据�
 | [`01-STM32-Firmware`](./01-STM32-Firmware) | 下位机固件：裸机分时隙主循环、四路传感采集、OLED 显示、声光报警、执行器联动、双串口指令毫秒级响应 | C / Keil MDK5 / 标准外设库 |
 | [`02-PC-UpperComputer`](./02-PC-UpperComputer) | PC 上位机：串口解析、曲线图表、MQTT 发布/订阅转发、登录鉴权 | C# .NET Framework 4.7.2 / WinForms / MQTTnet |
 | [`03-EMQX-Server`](./03-EMQX-Server) | EMQX 一键启动器（MQTT.exe）与服务器部署说明 | C# .NET 10 控制台 |
-| [`04-WeChat-Miniprogram`](./04-WeChat-Miniprogram) | 微信小程序：温室主题轮播首页、五项环境数据、执行器远程控制、报警提醒、MQTT 配置与历史 | 原生小程序 / MQTT over WebSocket |
+| [`04-WeChat-Miniprogram`](./04-WeChat-Miniprogram) | 微信小程序：登入页、温室主题轮播首页、五项环境数据、执行器远程控制、报警提醒、MQTT 配置与历史 | 原生小程序 / MQTT over WebSocket |
 | [`05-Testing-Tool`](./05-Testing-Tool) | 物联网链路调试台：固件帧模拟(上行) + MQTT 订阅监控 + 指令控制台(下行)，无硬件全链路联调，协议模板可复用 | C# .NET 10 WinForms / MQTTnet |
 
 ## 核心特性
@@ -68,7 +68,10 @@ PC 上位机通过串口解析后经 MQTT 上云，微信小程序订阅数据�
   | 光照强度 | — | **仅采集展示，不联动**（与固件 `Light.h` 约定一致） |
 
 - **稳定的小程序 MQTT 接入**：keep-alive 60s + 30s PINGREQ 心跳 + 指数退避自动重连 + DISCONNECT 优雅退出
+- **小程序登入页**：全幅温室实拍封面 + 近实白玻璃表单卡，与首页同一套设计令牌；登录态本地持久化，三页 `onShow` 守卫
 - **小程序温室主题轮播首页**：4 张 Pexels 免费商用实拍图（大棚纵览/番茄/草莓/LED 垂直农场）自动轮播 + 胶囊指示点
+- **调试台完整落盘**：界面日志框只留最近 500 行，完整会话日志始终写入 `%APPDATA%\IotLinkLab\logs\`；一键查看 / 另存为
+- **调试台数据导出**：上行帧 / 下行指令 / 订阅消息统一记录，导出 UTF-8 带 BOM 的 CSV（Excel 直接打开不乱码，一条记录一行）
 - **上位机附加能力**：GDI+ 实时四曲线图（温度/湿度/土壤/光照）、CSV 导出、登录鉴权（默认 `admin` / `admin`，支持注销重登）
 
 ## 数据契约
@@ -127,15 +130,20 @@ Temp:26C   Humi:60%RH   Soil:35%(raw=1200)  Light:72%  Servo:OFF Motor:OFF  Mode
 
 ### 2. 启动 EMQX 服务器
 
-`03-EMQX-Server` 内的启动器可自动定位并启动 EMQX（默认路径 `D:\EMQX-MQTT\emqx-5.0.26-windows-amd64`）：
+`03-EMQX-Server` 内的启动器可自动定位并启动 EMQX（默认路径 `D:\EMQX-MQTT\emqx-5.0.26-windows-amd64`，
+也识别 `D:\EMQX\emqx-*`；找不到时可在启动器同目录写 `emqx-path.txt` 指定 `bin` 路径）：
 
-- 双击 `MQTT.exe` → 启动并打开 Web 控制台（`http://localhost:18083`，admin/public）
-- 命令行 `MQTT.exe stop` → 停止服务器
+- 双击 `MQTT.exe` → 启动并打开 Web 控制台（`http://localhost:18200`，admin/public）
+- 命令行 `MQTT.exe status` / `MQTT.exe stop` → 查看状态 / 停止服务器
+
+> Dashboard 端口由 `etc/emqx.conf` 的 `dashboard.listeners.http.bind` 决定，启动器会自动读取。
+> EMQX 默认是 18083；**本机 18083 落在 Windows 保留端口区间（18027–18126）内无法绑定**，
+> 因此改用 18200。详见 [`03-EMQX-Server/README.md`](./03-EMQX-Server/README.md) 的「端口被 Windows 保留」一节。
 
 EMQX 发行包（52MB）已作为仓库 Release 附件提供：
 **[⬇️ emqx-5.0.26-windows-amd64.zip 一键下载](https://github.com/aichijuzi3209520851-lang/BYSJ-ZYX/releases/download/emqx-5.0.26/emqx-5.0.26-windows-amd64.zip)**
 （也可从 [EMQX 官网](https://www.emqx.io/zh/downloads) 下载 5.0.26 Windows amd64 版本）
-解压到 D 盘 1~2 级浅层目录（深路径会导致 Erlang 启动异常）。防火墙需放行 **1883 / 8083 / 18083** 端口。
+解压到 D 盘 1~2 级浅层目录（深路径会导致 Erlang 启动异常）。防火墙需放行 **1883 / 8083 / 18200** 端口。
 
 ### 3. 运行 PC 上位机
 
@@ -148,9 +156,16 @@ Visual Studio 2019+ 打开 `02-PC-UpperComputer/DHT11.csproj`（NuGet 会自动�
 
 ### 4. 微信小程序
 
-微信开发者工具导入 `04-WeChat-Miniprogram`，勾选"不校验合法域名"，
-传感器页 → 配置 → 填入 EMQX 主机 IP、WebSocket 端口 `8083`、订阅主题 `green/data` → 保存并连接。
+微信开发者工具导入 `04-WeChat-Miniprogram`，勾选"不校验合法域名"。
+
+**小程序已新增登入页**（全幅温室实拍封面 + 玻璃表单卡，风格与首页一致），启动即进入登入页；
+账号 `zyx` / 密码 `zyx`。登录态存于本地 storage，三个 tab 页在 `onShow` 时自检，未登录会 `reLaunch` 回登入页；
+首页底部提供「退出登录」入口。
+
+登录后：传感器页 → 配置 → 填入 EMQX 主机 IP、WebSocket 端口 `8083`、订阅主题 `green/data` → 保存并连接。
 连接过的配置会自动存入历史，下次一键回填。
+
+> 注：登入页仅作前端闸门（凭据硬编码在 `pages/login/login.js`），不构成真实安全边界，适用于课程/演示场景。
 
 ### 5. 无硬件联调（可选）
 

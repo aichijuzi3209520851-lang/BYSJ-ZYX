@@ -2,6 +2,7 @@
 // 传感器数据页: 通过共享 MQTT 模块(utils/mqtt.js)订阅上位机发布的 JSON 数据
 // 页面职责: 连接配置/历史管理 + 阈值判定展示 + 报警提醒
 const { createMqttClient } = require('../../utils/mqtt')
+const { guardLogin } = require('../../utils/auth')
 
 /* 统一报警阈值: 与 STM32 固件(ALARM_*_MAX) / PC 上位机保持完全一致 */
 const THRESHOLDS = {
@@ -45,7 +46,9 @@ Page({
   },
 
   // 每次回到本页都刷新配置/历史: 与执行器页共用存储, 配置可能已在彼处修改
+  // 首行先做登录守卫: tabBar 页面可被直接切换进来, 未登录则 reLaunch 回登录页
   onShow() {
+    if (!guardLogin()) return
     this.loadConfig()
     this.loadHistory()
   },

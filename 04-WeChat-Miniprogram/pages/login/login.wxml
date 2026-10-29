@@ -1,0 +1,64 @@
+<!-- 登入页: 全幅封面 + 底部玻璃表单卡 -->
+<view class="login">
+
+  <!-- 封面层: 温室实拍, 整体压成深绿调, 与首页署名名片同色系 -->
+  <view class="login-bg" aria-hidden="true">
+    <image class="login-bg-photo" src="/images/login-cover.jpg" mode="aspectFill" />
+    <view class="login-bg-scrim"></view>
+    <view class="login-bg-glow"></view>
+  </view>
+
+  <!-- 顶部: 品牌行 + 标题 -->
+  <view class="login-head">
+    <view class="login-eyebrow">
+      <view class="login-eyebrow-bar"></view>
+      <text class="login-eyebrow-text">智能温室大棚监测</text>
+    </view>
+    <text class="login-title">登入</text>
+    <text class="login-sub">环境数据与设备控制的统一入口</text>
+  </view>
+
+  <!-- 底部: 玻璃输入卡(登录态判定完成后才出现, 避免已登录用户瞥见表单) -->
+  <view class="login-foot" wx:if="{{ready}}">
+
+    <view class="login-card lg-panel">
+
+      <text class="login-card-lead">登入后即可查看实时环境数据与设备状态</text>
+
+      <view class="field">
+        <text class="field-label">账号</text>
+        <input class="field-input"
+          value="{{account}}"
+          placeholder="请输入账号"
+          placeholder-class="field-placeholder"
+          maxlength="20"
+          confirm-type="next"
+          cursor-spacing="24"
+          bindinput="onAccountInput" />
+      </view>
+
+      <view class="field">
+        <text class="field-label">密码</text>
+        <input class="field-input"
+          value="{{password}}"
+          password="{{true}}"
+          placeholder="请输入密码"
+          placeholder-class="field-placeholder"
+          maxlength="20"
+          confirm-type="done"
+          cursor-spacing="24"
+          bindinput="onPasswordInput"
+          bindconfirm="onLogin" />
+      </view>
+
+      <button class="btn-primary login-btn"
+        loading="{{submitting}}"
+        disabled="{{submitting}}"
+        bindtap="onLogin">登入</button>
+
+    </view>
+
+    <text class="login-mark">STM32 · MQTT · 微信小程序</text>
+  </view>
+
+</view>
