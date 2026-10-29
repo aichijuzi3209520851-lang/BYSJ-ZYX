@@ -175,8 +175,8 @@ ControlTab:   PublishRequested / Log / SetDeviceState(新增)
 - `TableLayoutPanel` 的默认首选高度是 **100px**。把它 `Dock=Fill` 放进 `AutoSize` 行时，
   父行会按 100px 取高，第三行按钮/输入会被裁成一条色带。控制区必须显式行高：
   模拟器右侧控制区 148（内部 136）、控制台命令网格 40（父行 46）。
-- `FieldShell` **不要设置 `Region`**：用透明背景 + 自绘圆角填充/描边，内部控件保留
-  8px 内边距；否则圆角边框会被 Region 裁掉，只剩一条底边。
+- `FieldShell` **不要设置 `Region`**：用透明背景 + 自绘圆角填充/描边，内部控件左右保留
+  8px、上下保留 6px 内边距；否则圆角边框会被 Region 裁掉，只剩一条底边。
 - 日志抽屉与连接设置抽屉**互斥**：打开其一时自动关闭另一个；日志展开高度不足时
   自动回到收起态，保证主工作区 ≥460。
 - `settings.json` 新增 `logOpen`/`logRatio`；旧版文件缺少字段时回退默认值，不得抛异常。
