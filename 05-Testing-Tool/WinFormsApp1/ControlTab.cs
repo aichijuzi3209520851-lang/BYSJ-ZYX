@@ -64,8 +64,8 @@ namespace IotLinkLab
             leftFlow.Controls.Add(Title("说明"));
             var note = new Label
             {
-                Text = "固件解析入口 Parse_Command_Frame:\nmode-0/1 任意生效; DUOJ/MOTOR 仅手动模式,\n自动模式下设备由报警联动管辖(发指令无效)。\n帧以 \r\n 结尾, 上位机透传时自动补全。",
-                AutoSize = false, Width = 380, Height = 84, Font = Theme.Ui(9F),
+                Text = "mode-0/1 任意时刻生效; DUOJ/MOTOR 仅手动模式,\n自动模式下由报警联动管辖(发指令无效)。",
+                AutoSize = true, MaximumSize = new Size(400, 0), Font = Theme.Ui(9F),
                 ForeColor = Theme.TextTertiary, BackColor = Color.Transparent
             };
             leftFlow.Controls.Add(note);

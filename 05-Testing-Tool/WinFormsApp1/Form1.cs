@@ -22,7 +22,7 @@ namespace IotLinkLab
         private StatusChip _chip = null!;
         private Panel _content = null!;
         private RichTextBox _logBox = null!;
-        private readonly Label[] _navItems = new Label[3];
+        private readonly NavChip[] _navItems = new NavChip[3];
         private int _activeTab;
 
         private string AppDataDir => Path.Combine(
@@ -48,33 +48,29 @@ namespace IotLinkLab
 
         private void BuildUi()
         {
+            // banner 高度按字体实测计算(标题+副标题+呼吸空间), 任何 DPI 下都不裁字
+            int bannerH = TextRenderer.MeasureText("物联网链路调试台", Theme.Ui(15F, bold: true)).Height
+                        + TextRenderer.MeasureText("串口链路模拟 · MQTT 上行/下行 · 协议可复用", Theme.Ui(8.5F)).Height + 30;
+
             var root = new TableLayoutPanel { Dock = DockStyle.Fill, RowCount = 5, BackColor = Theme.PageBg };
-            root.RowStyles.Add(new RowStyle(SizeType.Absolute, 64));
-            root.RowStyles.Add(new RowStyle(SizeType.Absolute, 58));
-            root.RowStyles.Add(new RowStyle(SizeType.Absolute, 44));
+            root.RowStyles.Add(new RowStyle(SizeType.Absolute, bannerH));
+            root.RowStyles.Add(new RowStyle(SizeType.Absolute, 96));    // 连接卡两行
+            root.RowStyles.Add(new RowStyle(SizeType.Absolute, 42));
             root.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
-            root.RowStyles.Add(new RowStyle(SizeType.Absolute, 150));
+            root.RowStyles.Add(new RowStyle(SizeType.Absolute, 120));   // 日志
 
             // ---------- 1. 顶部横幅 ----------
             _banner = new Panel { Dock = DockStyle.Fill, BackColor = Theme.Primary };
             _banner.Paint += Banner_Paint;
-            var bannerTitle = new Label
-            {
-                Text = "物联网链路调试台", AutoSize = true, Font = Theme.Ui(15F, bold: true),
-                ForeColor = Color.White, BackColor = Color.Transparent, Location = new Point(18, 8)
-            };
-            var bannerSub = new Label
-            {
-                Text = "串口链路模拟 · MQTT 上行/下行 · 协议可复用", AutoSize = true, Font = Theme.Ui(8.5F),
-                ForeColor = Color.FromArgb(200, 255, 255, 255), BackColor = Color.Transparent, Location = new Point(20, 38)
-            };
-            _banner.Controls.Add(bannerTitle);
-            _banner.Controls.Add(bannerSub);
             root.Controls.Add(_banner, 0, 0);
 
-            // ---------- 2. 连接配置卡 ----------
-            var connCard = new Card { Dock = DockStyle.Fill, Padding = new Padding(10, 8, 10, 8) };
-            var connRow = new FlowLayoutPanel { Dock = DockStyle.Fill, BackColor = Color.Transparent, WrapContents = false };
+            // ---------- 2. 连接配置卡(两行: 连接参数 / 数据与控制主题), 避免单行超宽被窗缘截断 ----------
+            var connCard = new Card { Dock = DockStyle.Fill, Padding = new Padding(10, 6, 10, 6) };
+            var connGrid = new TableLayoutPanel { Dock = DockStyle.Fill, RowCount = 2, BackColor = Color.Transparent, AutoSize = true };
+            connGrid.RowStyles.Add(new RowStyle(SizeType.Percent, 50f));
+            connGrid.RowStyles.Add(new RowStyle(SizeType.Percent, 50f));
+            var connRow = new FlowLayoutPanel { Dock = DockStyle.Fill, BackColor = Color.Transparent, WrapContents = false, Margin = new Padding(0) };
+            var topicRow = new FlowLayoutPanel { Dock = DockStyle.Fill, BackColor = Color.Transparent, WrapContents = false, Margin = new Padding(0) };
 
             AddField(connRow, "服务器", _hostBox = new TextBox { Width = 130, Font = Theme.Mono(9.5F), Text = "127.0.0.1" });
             AddField(connRow, "端口", _portBox = new TextBox { Width = 64, Font = Theme.Mono(9.5F), Text = "1883" });
@@ -96,37 +92,25 @@ namespace IotLinkLab
             _chip.SetState("● 未连接", Theme.TextTertiary);
             connRow.Controls.Add(_chip);
 
-            AddField(connRow, "数据主题(上行发布)", _dataTopicBox = new TextBox { Width = 140, Font = Theme.Mono(9.5F), Text = "green/data" });
-            AddField(connRow, "控制主题(下行)", _controlTopicBox = new TextBox { Width = 130, Font = Theme.Mono(9.5F), Text = "green/control" });
+            AddField(topicRow, "数据主题(上行发布)", _dataTopicBox = new TextBox { Width = 200, Font = Theme.Mono(9.5F), Text = "green/data" });
+            AddField(topicRow, "控制主题(下行)", _controlTopicBox = new TextBox { Width = 200, Font = Theme.Mono(9.5F), Text = "green/control" });
 
-            connCard.Controls.Add(connRow);
+            connGrid.Controls.Add(connRow, 0, 0);
+            connGrid.Controls.Add(topicRow, 0, 1);
+            connCard.Controls.Add(connGrid);
             root.Controls.Add(connCard, 0, 1);
 
             // ---------- 3. 左侧导航 chips ----------
-            var nav = new FlowLayoutPanel { Dock = DockStyle.Fill, BackColor = Color.Transparent, WrapContents = false, Padding = new Padding(12, 6, 0, 0) };
+            var nav = new FlowLayoutPanel { Dock = DockStyle.Fill, BackColor = Color.Transparent, WrapContents = false, Padding = new Padding(12, 7, 0, 0) };
             string[] names = { "① 设备模拟器(上行)", "② 订阅监控台", "③ 控制台(下行)" };
             for (int i = 0; i < names.Length; i++)
             {
-                var chip = new Label
+                var chip = new NavChip
                 {
-                    Text = names[i], AutoSize = false, Size = new Size(180, 30),
-                    TextAlign = ContentAlignment.MiddleCenter, Font = Theme.Ui(9.5F, bold: true),
-                    BackColor = Color.White, ForeColor = Theme.TextSecondary,
-                    Margin = new Padding(0, 0, 8, 0), Cursor = Cursors.Hand
+                    Text = names[i],
+                    Margin = new Padding(0, 0, 8, 0)
                 };
                 int idx = i;
-                chip.Paint += (s, e) =>
-                {
-                    var g = e.Graphics; g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
-                    using var path = RoundedButton.CreateRoundedPath(new Rectangle(0, 0, chip.Width - 1, chip.Height - 1), 15);
-                    using var b = new SolidBrush(idx == _activeTab ? Color.FromArgb(20, Theme.Primary) : Color.White);
-                    g.FillPath(b, path);
-                    using var pen = new Pen(idx == _activeTab ? Theme.Primary : Theme.CardStroke, 1.4f);
-                    g.DrawPath(pen, path);
-                    TextRenderer.DrawText(g, names[idx], chip.Font, chip.ClientRectangle,
-                        idx == _activeTab ? Theme.Primary : Theme.TextSecondary,
-                        TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter);
-                };
                 chip.Click += (s, e) => SwitchTab(idx);
                 _navItems[i] = chip;
                 nav.Controls.Add(chip);
@@ -187,6 +171,23 @@ namespace IotLinkLab
                 Color.FromArgb(168, 10, 44, 28), Color.FromArgb(90, 10, 52, 32), 0f))
             {
                 g.FillRectangle(scrim, _banner.ClientRectangle);
+            }
+
+            // 标题+副标题按实测字体高度堆叠并整体垂直居中(DPI 安全, 不用绝对坐标)
+            var bannerRect = _banner.ClientRectangle;
+            using (var titleFont = Theme.Ui(15F, bold: true))
+            using (var subFont = Theme.Ui(8.5F))
+            {
+                int titleH = TextRenderer.MeasureText("物联网链路调试台", titleFont).Height;
+                int subH = TextRenderer.MeasureText("串口链路模拟 · MQTT 上行/下行 · 协议可复用", subFont).Height;
+                int blockH = titleH + 2 + subH;
+                int top = Math.Max(4, (bannerRect.Height - blockH) / 2);
+                TextRenderer.DrawText(g, "物联网链路调试台", titleFont,
+                    new Rectangle(18, top, bannerRect.Width - 36, titleH), Color.White,
+                    TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.SingleLine | TextFormatFlags.NoPadding);
+                TextRenderer.DrawText(g, "串口链路模拟 · MQTT 上行/下行 · 协议可复用", subFont,
+                    new Rectangle(20, top + titleH + 2, bannerRect.Width - 40, subH), Color.FromArgb(205, 255, 255, 255),
+                    TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.SingleLine | TextFormatFlags.NoPadding);
             }
         }
 
