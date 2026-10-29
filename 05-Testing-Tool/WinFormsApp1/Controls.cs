@@ -13,7 +13,7 @@ namespace IotLinkLab
         [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
         public Color FillColor { get; set; } = Theme.Primary;
         [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
-        public Color TextColor { get; set; } = Color.White;
+        public Color TextColor { get; set; } = Theme.OnPrimary;
         [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
         public bool Outline { get; set; }
 
@@ -49,6 +49,13 @@ namespace IotLinkLab
                 using var pen = new Pen(Enabled ? FillColor : Color.FromArgb(110, Theme.TextTertiary), 1.6f);
                 g.DrawPath(pen, path);
             }
+            if (Focused && ShowFocusCues)
+            {
+                using var focusPath = CreateRoundedPath(new Rectangle(2, 2, Width - 5, Height - 5), Math.Max(2, Radius - 2));
+                using var focusPen = new Pen(Color.FromArgb(150, Theme.Primary), 2f);
+                focusPen.DashStyle = DashStyle.Dot;
+                g.DrawPath(focusPen, focusPath);
+            }
             var text = !Enabled ? Color.FromArgb(150, Theme.TextTertiary) : TextColor;
             TextRenderer.DrawText(g, Text, Font, rect, text,
                 TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.SingleLine);
@@ -60,6 +67,8 @@ namespace IotLinkLab
         protected override void OnMouseUp(MouseEventArgs e) { _pressed = false; Invalidate(); base.OnMouseUp(e); }
         protected override void OnEnabledChanged(EventArgs e) { Invalidate(); base.OnEnabledChanged(e); }
         protected override void OnTextChanged(EventArgs e) { Invalidate(); base.OnTextChanged(e); }
+        protected override void OnGotFocus(EventArgs e) { Invalidate(); base.OnGotFocus(e); }
+        protected override void OnLostFocus(EventArgs e) { Invalidate(); base.OnLostFocus(e); }
 
         internal static GraphicsPath CreateRoundedPath(Rectangle rect, int radius)
         {
@@ -194,7 +203,7 @@ namespace IotLinkLab
             var rect = new Rectangle(0, 0, Width - 1, Height - 1);
             using (var path = RoundedButton.CreateRoundedPath(rect, Height / 2))
             {
-                using (var b = new SolidBrush(_selected ? Color.FromArgb(20, Theme.Primary) : Color.White))
+                using (var b = new SolidBrush(_selected ? Color.FromArgb(20, Theme.Primary) : Theme.CardBg))
                     g.FillPath(b, path);
                 using (var pen = new Pen(_selected ? Theme.Primary : Theme.CardStroke, 1.4f))
                     g.DrawPath(pen, path);

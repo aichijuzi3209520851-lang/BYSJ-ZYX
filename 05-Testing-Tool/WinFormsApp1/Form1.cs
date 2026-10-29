@@ -25,7 +25,13 @@ namespace IotLinkLab
         private SplitContainer _split = null!;
         private Label _statLabel = null!;
         private readonly NavChip[] _navItems = new NavChip[3];
+        private ToolTip _formTips = null!;
         private int _activeTab;
+
+        // 分隔条状态: 默认按可用高度分配, 用户拖过后按用户比例保持
+        private bool _userSplit;
+        private double _userSplitRatio = 0.72;
+        private bool _suppressSplitEvent;
 
         private string AppDataDir => Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "IotLinkLab");
@@ -85,6 +91,17 @@ namespace IotLinkLab
 
             // 窗口尺寸变化时按比例重算分隔位置, 否则缩小时日志区会被整个挤出可视区域
             Resize += (s, e) => ApplySplitRatio();
+
+            _split.SplitterMoved += (s, e) =>
+            {
+                if (_suppressSplitEvent || _split == null || _split.IsDisposed) return;
+                int usable = _split.Height - _split.SplitterWidth;
+                if (usable > _split.Panel1MinSize + _split.Panel2MinSize)
+                {
+                    _userSplitRatio = (double)_split.SplitterDistance / usable;
+                    _userSplit = true;
+                }
+            };
         }
 
         // ==================== UI 构建 ====================
@@ -92,16 +109,10 @@ namespace IotLinkLab
         private void BuildUi()
         {
             AppPaths.EnsureAll();
+            _formTips = new ToolTip { AutoPopDelay = 15000, InitialDelay = 350, ReshowDelay = 150 };
 
-            // banner 高度按「标题+副标题+图标」三者实测计算, 任何 DPI 下都不裁字
-            using (var titleFont = Theme.Ui(15F, bold: true))
-            using (var subFont = Theme.Ui(8.5F))
-            {
-                int textH = TextRenderer.MeasureText("物联网链路调试台", titleFont).Height
-                          + 3
-                          + TextRenderer.MeasureText("串口链路模拟 · MQTT 上行/下行 · 协议可复用", subFont).Height;
-                _bannerH = Math.Max(textH + 34, 78);
-            }
+            // 顶部固定区域收敛到 52 + 92 + 40 = 184, 把释放出的高度让给当前功能页
+            _bannerH = 52;
 
             var root = new TableLayoutPanel
             {
@@ -109,8 +120,8 @@ namespace IotLinkLab
                 Margin = new Padding(0), Padding = new Padding(0)
             };
             root.RowStyles.Add(new RowStyle(SizeType.Absolute, _bannerH));
-            root.RowStyles.Add(new RowStyle(SizeType.Absolute, _connCardH));
-            root.RowStyles.Add(new RowStyle(SizeType.Absolute, 46));   // 导航条
+            root.RowStyles.Add(new RowStyle(SizeType.Absolute, 92));
+            root.RowStyles.Add(new RowStyle(SizeType.Absolute, 40));   // 导航条
             root.RowStyles.Add(new RowStyle(SizeType.Percent, 100));   // 内容 + 日志(可拖动)
 
             // ---------- 1. 顶部横幅 ----------
@@ -118,69 +129,105 @@ namespace IotLinkLab
             _banner.Paint += Banner_Paint;
             root.Controls.Add(_banner, 0, 0);
 
-            // ---------- 2. 连接配置卡(两行: 连接参数 / 主题) ----------
-            var connCard = new Card { Dock = DockStyle.Fill, Padding = new Padding(14, 10, 14, 10), Margin = new Padding(12, 10, 12, 4) };
+            // ---------- 2. 连接配置卡(固定两行网格, 状态右对齐) ----------
+            var connCard = new Card { Dock = DockStyle.Fill, Padding = new Padding(12, 6, 12, 6), Margin = new Padding(12, 4, 12, 4) };
             var connGrid = new TableLayoutPanel
             {
                 Dock = DockStyle.Fill, RowCount = 2, ColumnCount = 1,
                 BackColor = Color.Transparent, Margin = new Padding(0)
             };
-            connGrid.RowStyles.Add(new RowStyle(SizeType.Percent, 50f));
-            connGrid.RowStyles.Add(new RowStyle(SizeType.Percent, 50f));
-            var connRow = NewRow();
-            var topicRow = NewRow();
+            connGrid.RowStyles.Add(new RowStyle(SizeType.Absolute, Theme.HeightButton));
+            connGrid.RowStyles.Add(new RowStyle(SizeType.Absolute, Theme.HeightButton));
 
-            // 服务器 / 端口 / 协议 / 按钮 / 状态
-            _hostBox = new TextBox { Width = 132, Font = Theme.Mono(9.5F), Text = "127.0.0.1" };
-            AddField(connRow, "服务器", _hostBox, first: true);
-
-            _portBox = new TextBox { Width = 66, Font = Theme.Mono(9.5F), Text = "1883" };
-            AddField(connRow, "端口", _portBox);
-
+            // 第一行: 服务器 / 端口 / 协议 / 操作 / 状态
+            _hostBox = new TextBox { Font = Theme.Mono(9.5F), Text = "127.0.0.1", Anchor = AnchorStyles.Left | AnchorStyles.Right, Margin = new Padding(0, 4, 10, 0) };
+            _portBox = new TextBox { Font = Theme.Mono(9.5F), Text = "1883", Anchor = AnchorStyles.Left, Margin = new Padding(0, 4, 10, 0) };
+            _portBox.Width = UiFit.TextWidth("65535", _portBox.Font) + UiFit.Scale(_portBox, 28);
             _protoCombo = new ComboBox
             {
                 DropDownStyle = ComboBoxStyle.DropDownList, Font = Theme.Ui(9F), ItemHeight = 22,
-                Margin = new Padding(0, 2, 0, 0)
+                Anchor = AnchorStyles.Left, Margin = new Padding(0, 2, 0, 0)
             };
             _protoCombo.Items.AddRange(new object[] { "TCP", "WebSocket" });
             _protoCombo.SelectedIndex = 0;
-            // ★ 关键: 按最长项("WebSocket")实测宽度, 而不是写死 92 —— 根治下拉框裁字
+            // 按最长项实测宽度, 避免 WebSocket 在不同 DPI 下被裁字
             UiFit.FitCombo(_protoCombo, padTotal: 26);
             _protoCombo.SelectedIndexChanged += (s, e) =>
             {
                 if (_portBox.Text == "1883" && _protoCombo.SelectedIndex == 1) _portBox.Text = "8083";
                 else if (_portBox.Text == "8083" && _protoCombo.SelectedIndex == 0) _portBox.Text = "1883";
             };
-            AddLabel(connRow, "协议");
-            connRow.Controls.Add(_protoCombo);
 
-            _btnConnect = new RoundedButton { Text = "连接", FillColor = Theme.Primary, Margin = new Padding(20, 0, 0, 0) };
+            _btnConnect = new RoundedButton { Text = "连接", FillColor = Theme.Primary, Anchor = AnchorStyles.Left, Margin = new Padding(12, 0, 0, 0) };
             UiFit.SizeButton(_btnConnect, padTotal: 40, minWidth: 80);
-            _btnDisconnect = new RoundedButton { Text = "断开", FillColor = Theme.Danger, Enabled = false, Margin = new Padding(8, 0, 0, 0) };
+            _btnDisconnect = new RoundedButton { Text = "断开", FillColor = Theme.Danger, Enabled = false, Anchor = AnchorStyles.Left, Margin = new Padding(Theme.GapSm, 0, 0, 0) };
             UiFit.SizeButton(_btnDisconnect, padTotal: 40, minWidth: 80);
-            connRow.Controls.Add(_btnConnect);
-            connRow.Controls.Add(_btnDisconnect);
 
-            _chip = new StatusChip { Margin = new Padding(16, 3, 0, 0) };
+            _chip = new StatusChip { Anchor = AnchorStyles.Right, Margin = new Padding(0, 3, 0, 0) };
             _chip.SetState("未连接", Theme.TextTertiary);
-            connRow.Controls.Add(_chip);
 
-            // 主题行
-            _dataTopicBox = new TextBox { Width = 210, Font = Theme.Mono(9.5F), Text = "green/data" };
-            AddField(topicRow, "上行主题", _dataTopicBox, first: true);
-            _controlTopicBox = new TextBox { Width = 210, Font = Theme.Mono(9.5F), Text = "green/control" };
-            AddField(topicRow, "下行主题", _controlTopicBox);
+            var connRow = new TableLayoutPanel
+            {
+                Dock = DockStyle.Fill, ColumnCount = 10, RowCount = 1,
+                BackColor = Color.Transparent, Margin = new Padding(0)
+            };
+            connRow.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+            connRow.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 30f));
+            connRow.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+            connRow.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+            connRow.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+            connRow.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+            connRow.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+            connRow.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+            connRow.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100f));
+            connRow.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+
+            connRow.Controls.Add(FieldLabel("服务器", first: true), 0, 0);
+            connRow.Controls.Add(_hostBox, 1, 0);
+            connRow.Controls.Add(FieldLabel("端口"), 2, 0);
+            connRow.Controls.Add(_portBox, 3, 0);
+            connRow.Controls.Add(FieldLabel("协议"), 4, 0);
+            connRow.Controls.Add(_protoCombo, 5, 0);
+            connRow.Controls.Add(_btnConnect, 6, 0);
+            connRow.Controls.Add(_btnDisconnect, 7, 0);
+            connRow.Controls.Add(_chip, 9, 0);
+
+            // 第二行: 两个主题输入框随可用宽度伸展
+            _dataTopicBox = new TextBox { Font = Theme.Mono(9.5F), Text = "green/data", Anchor = AnchorStyles.Left | AnchorStyles.Right, Margin = new Padding(0, 4, Theme.GapLg, 0) };
+            _controlTopicBox = new TextBox { Font = Theme.Mono(9.5F), Text = "green/control", Anchor = AnchorStyles.Left | AnchorStyles.Right, Margin = new Padding(0, 4, 0, 0) };
+
+            var topicRow = new TableLayoutPanel
+            {
+                Dock = DockStyle.Fill, ColumnCount = 4, RowCount = 1,
+                BackColor = Color.Transparent, Margin = new Padding(0)
+            };
+            topicRow.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+            topicRow.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50f));
+            topicRow.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+            topicRow.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50f));
+            topicRow.Controls.Add(FieldLabel("上行主题", first: true), 0, 0);
+            topicRow.Controls.Add(_dataTopicBox, 1, 0);
+            topicRow.Controls.Add(FieldLabel("下行主题"), 2, 0);
+            topicRow.Controls.Add(_controlTopicBox, 3, 0);
 
             connGrid.Controls.Add(connRow, 0, 0);
             connGrid.Controls.Add(topicRow, 0, 1);
             connCard.Controls.Add(connGrid);
             root.Controls.Add(connCard, 0, 1);
 
-            // ---------- 3. 导航 chips ----------
-            var nav = new FlowLayoutPanel
+            // ---------- 3. 导航 chips + 快捷键入口 ----------
+            var nav = new TableLayoutPanel
+            {
+                Dock = DockStyle.Fill, ColumnCount = 2, RowCount = 1,
+                BackColor = Color.Transparent, Margin = new Padding(0)
+            };
+            nav.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100f));
+            nav.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+
+            var navChips = new FlowLayoutPanel
             {
                 Dock = DockStyle.Fill, BackColor = Color.Transparent, WrapContents = false,
-                Padding = new Padding(16, 6, 0, 0), Margin = new Padding(0)
+                Padding = new Padding(16, 4, 0, 0), Margin = new Padding(0)
             };
             string[] names = { "① 设备模拟器 · 上行", "② 订阅监控台", "③ 控制台 · 下行" };
             for (int i = 0; i < names.Length; i++)
@@ -189,21 +236,26 @@ namespace IotLinkLab
                 int idx = i;
                 chip.Click += (s, e) => SwitchTab(idx);
                 _navItems[i] = chip;
-                nav.Controls.Add(chip);
+                navChips.Controls.Add(chip);
             }
-            nav.Controls.Add(new Label
+
+            var shortcutLabel = new Label
             {
-                Text = "F1/F2/F3 切换页面   F4 发一帧   F5 连接   F6 断开   F7 日志   F8 导出   F11 最大化",
-                AutoSize = true, Font = Theme.Ui(8.5F), ForeColor = Theme.TextTertiary,
-                Margin = new Padding(14, 9, 0, 0)
-            });
+                Text = "快捷键 F1-F11", AutoSize = true, Font = Theme.Ui(8.5F),
+                ForeColor = Theme.TextTertiary, Anchor = AnchorStyles.Right,
+                Margin = new Padding(0, 12, 16, 0)
+            };
+            _formTips.SetToolTip(shortcutLabel,
+                "F1/F2/F3 切换页面\nF4 发一帧\nF5 连接 / F6 断开\nF7 查看日志 / F8 导出数据\nF11 最大化");
+            nav.Controls.Add(navChips, 0, 0);
+            nav.Controls.Add(shortcutLabel, 1, 0);
             root.Controls.Add(nav, 0, 2);
 
             // ---------- 4. 内容 + 日志(SplitContainer, 可拖动分隔) ----------
             _split = new SplitContainer
             {
                 Dock = DockStyle.Fill, Orientation = Orientation.Horizontal,
-                SplitterWidth = 8, BackColor = Theme.PageBg, Panel1MinSize = 240, Panel2MinSize = 110,
+                SplitterWidth = 8, BackColor = Theme.PageBg, Panel1MinSize = 360, Panel2MinSize = 96,
                 Margin = new Padding(0)
             };
             _split.Panel1.BackColor = Theme.PageBg;
@@ -225,32 +277,14 @@ namespace IotLinkLab
             SwitchTab(0);
         }
 
-        private int _bannerH = 84;
-        private int _connCardH = 108;
+        private int _bannerH = 52;
 
-        private static FlowLayoutPanel NewRow() => new()
+        private static Label FieldLabel(string text, bool first = false) => new()
         {
-            Dock = DockStyle.Fill, BackColor = Color.Transparent, WrapContents = false, Margin = new Padding(0)
+            Text = text, AutoSize = true, Font = Theme.Ui(9F),
+            ForeColor = Theme.TextSecondary, Anchor = AnchorStyles.Left,
+            Margin = new Padding(first ? 0 : 18, 9, 7, 0)
         };
-
-        /// <summary>表单标签: 上下留出呼吸空间, 不再贴脸。</summary>
-        private static void AddLabel(FlowLayoutPanel row, string text)
-            => row.Controls.Add(new Label
-            {
-                Text = text, AutoSize = true, Font = Theme.Ui(9F),
-                ForeColor = Theme.TextSecondary, Margin = new Padding(22, 9, 7, 0)
-            });
-
-        private static void AddField(FlowLayoutPanel row, string label, TextBox box, bool first = false)
-        {
-            row.Controls.Add(new Label
-            {
-                Text = label, AutoSize = true, Font = Theme.Ui(9F),
-                ForeColor = Theme.TextSecondary,
-                Margin = first ? new Padding(0, 9, 7, 0) : new Padding(22, 9, 7, 0)
-            });
-            row.Controls.Add(box);
-        }
 
         /// <summary>日志卡: 头部三个动作按钮 + 自适应高度的日志正文。</summary>
         private Control BuildLogCard()
@@ -265,11 +299,19 @@ namespace IotLinkLab
             grid.RowStyles.Add(new RowStyle(SizeType.Absolute, 34));
             grid.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
 
-            var head = new FlowLayoutPanel
+            var head = new TableLayoutPanel
+            {
+                Dock = DockStyle.Fill, ColumnCount = 2, RowCount = 1,
+                BackColor = Color.Transparent, Margin = new Padding(0)
+            };
+            head.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100f));
+            head.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+
+            var actions = new FlowLayoutPanel
             {
                 Dock = DockStyle.Fill, BackColor = Color.Transparent, WrapContents = false, Margin = new Padding(0)
             };
-            head.Controls.Add(new Label
+            actions.Controls.Add(new Label
             {
                 Text = "运行日志", AutoSize = true, Font = Theme.Ui(9.5F, bold: true),
                 ForeColor = Theme.TextSecondary, Margin = new Padding(0, 7, 14, 0)
@@ -288,23 +330,25 @@ namespace IotLinkLab
                 _logCount = 0;
                 Log("日志显示区已清空(磁盘日志文件保留)。", Theme.TextTertiary);
             };
-            head.Controls.Add(btnView);
-            head.Controls.Add(btnExport);
-            head.Controls.Add(btnCopy);
-            head.Controls.Add(btnClear);
+            actions.Controls.Add(btnView);
+            actions.Controls.Add(btnExport);
+            actions.Controls.Add(btnCopy);
+            actions.Controls.Add(btnClear);
 
             _statLabel = new Label
             {
                 Text = "已记录 0 条", AutoSize = true, Font = Theme.Ui(8.5F),
-                ForeColor = Theme.TextTertiary, Margin = new Padding(14, 8, 0, 0)
+                ForeColor = Theme.TextTertiary, Anchor = AnchorStyles.Right,
+                Margin = new Padding(0, 9, 0, 0)
             };
-            head.Controls.Add(_statLabel);
+            head.Controls.Add(actions, 0, 0);
+            head.Controls.Add(_statLabel, 1, 0);
 
             _logBox = new RichTextBox
             {
                 Dock = DockStyle.Fill, Multiline = true, ReadOnly = true,
                 ScrollBars = RichTextBoxScrollBars.Vertical,
-                BackColor = Theme.FieldBg, Font = Theme.Mono(8.75F),
+                BackColor = Theme.FieldBg, Font = Theme.Mono(9F),
                 BorderStyle = BorderStyle.None, DetectUrls = false, WordWrap = true,
                 Margin = new Padding(0)
             };
@@ -320,12 +364,12 @@ namespace IotLinkLab
             var b = new RoundedButton
             {
                 Text = text,
-                Font = Theme.Ui(8.75F, bold: !outline),
-                Height = 26,
+                Font = Theme.Ui(9F, bold: !outline),
+                Height = Theme.HeightSmallButton,
                 FillColor = color,
-                TextColor = outline ? color : Color.White,
+                TextColor = outline ? color : Theme.OnPrimary,
                 Outline = outline,
-                Margin = new Padding(0, 4, 8, 0)
+                Margin = new Padding(0, 3, 8, 0)
             };
             UiFit.SizeButton(b, padTotal: 30, minWidth: 56);
             return b;
@@ -390,16 +434,20 @@ namespace IotLinkLab
             using var subFont = Theme.Ui(8.5F);
             int titleH = TextRenderer.MeasureText("物联网链路调试台", titleFont).Height;
             int subH = TextRenderer.MeasureText("串口链路模拟 · MQTT 上行/下行 · 协议可复用", subFont).Height;
-            int blockH = titleH + 3 + subH;
+            bool showSubtitle = full.Width >= UiFit.Scale(this, 1200);
+            int blockH = showSubtitle ? titleH + 3 + subH : titleH;
             int top = Math.Max(6, (full.Height - blockH) / 2);
             int textW = Math.Max(10, full.Width - textLeft - 20);
 
             TextRenderer.DrawText(g, "物联网链路调试台", titleFont,
-                new Rectangle(textLeft, top, textW, titleH), Color.White,
+                new Rectangle(textLeft, top, textW, titleH), Theme.OnPrimary,
                 TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.SingleLine | TextFormatFlags.NoPadding);
-            TextRenderer.DrawText(g, "串口链路模拟 · MQTT 上行/下行 · 协议可复用", subFont,
-                new Rectangle(textLeft, top + titleH + 3, textW, subH), Color.FromArgb(210, 255, 255, 255),
-                TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.SingleLine | TextFormatFlags.NoPadding);
+            if (showSubtitle)
+            {
+                TextRenderer.DrawText(g, "串口链路模拟 · MQTT 上行/下行 · 协议可复用", subFont,
+                    new Rectangle(textLeft, top + titleH + 3, textW, subH), Color.FromArgb(210, 255, 255, 255),
+                    TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.SingleLine | TextFormatFlags.NoPadding);
+            }
         }
 
         /// <summary>从内存流读图, 避免 Image.FromFile 锁住程序目录里的素材文件。</summary>
@@ -423,12 +471,16 @@ namespace IotLinkLab
             _simTab.Visible = index == 0;
             _monTab.Visible = index == 1;
             _ctlTab.Visible = index == 2;
-            foreach (var chip in _navItems) chip.Invalidate();
+            for (int i = 0; i < _navItems.Length; i++)
+            {
+                _navItems[i].Selected = i == index;
+                _navItems[i].Invalidate();
+            }
         }
 
         /// <summary>
-        /// 内容区 : 日志区 = 72% : 28%。窗口改尺寸时也要重算,
-        /// 否则缩窗后日志区会被压到不可见(用户原话「浪费空间」的另一面: 该看到的看不到)。
+        /// 日志区默认给固定合理高度, 不再简单按 72% 抢占主内容;
+        /// 用户拖过分隔条后按用户比例保持, 窗口缩放不覆盖用户选择。
         /// </summary>
         private void ApplySplitRatio()
         {
@@ -436,9 +488,24 @@ namespace IotLinkLab
             {
                 int usable = _split.Height - _split.SplitterWidth;
                 if (usable < _split.Panel1MinSize + _split.Panel2MinSize) return;
-                int target = (int)(usable * 0.72);
+
+                int target;
+                if (_userSplit)
+                {
+                    target = (int)Math.Round(usable * _userSplitRatio);
+                }
+                else
+                {
+                    int logHeight = usable < 500 ? 96 : usable <= 720 ? 112 : 168;
+                    target = usable - logHeight;
+                }
+
                 target = Math.Max(_split.Panel1MinSize, Math.Min(usable - _split.Panel2MinSize, target));
-                if (_split.SplitterDistance != target) _split.SplitterDistance = target;
+                if (_split.SplitterDistance == target) return;
+
+                _suppressSplitEvent = true;
+                try { _split.SplitterDistance = target; }
+                finally { _suppressSplitEvent = false; }
             }
             catch { /* 极端窗口尺寸下忽略 */ }
         }

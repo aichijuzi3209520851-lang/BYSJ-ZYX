@@ -11,6 +11,8 @@ namespace IotLinkLab
     {
         private TextBox _topicInput = null!, _customInput = null!;
         private CheckBox _chkQos1 = null!;
+        private TableLayoutPanel _layout = null!;
+        private readonly List<RoundedButton> _cmdButtons = new();
         private readonly ToolTip _tip = new();
 
         /// <summary>(topic, payload, qos1)——Form 层发布。</summary>
@@ -30,18 +32,46 @@ namespace IotLinkLab
             BackColor = Color.Transparent;
             DoubleBuffered = true;
 
-            var layout = new TableLayoutPanel
+            _layout = new TableLayoutPanel
             {
                 Dock = DockStyle.Fill, ColumnCount = 2, RowCount = 1,
                 BackColor = Color.Transparent, Margin = new Padding(0), Padding = new Padding(0)
             };
-            layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 46f));
-            layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 54f));
-            layout.RowStyles.Add(new RowStyle(SizeType.Percent, 100f));
+            _layout.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 360));
+            _layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100f));
+            _layout.RowStyles.Add(new RowStyle(SizeType.Percent, 100f));
 
-            layout.Controls.Add(BuildLeft(), 0, 0);
-            layout.Controls.Add(BuildRight(), 1, 0);
-            Controls.Add(layout);
+            _layout.Controls.Add(BuildLeft(), 0, 0);
+            _layout.Controls.Add(BuildRight(), 1, 0);
+            Controls.Add(_layout);
+
+            Resize += (s, e) => UpdateLeftWidth();
+        }
+
+        protected override void OnHandleCreated(EventArgs e)
+        {
+            base.OnHandleCreated(e);
+            UpdateLeftWidth();
+        }
+
+        /// <summary>指令区按宽度给固定基准: 320 / 360 / 400, 剩余宽度全部给自定义报文编辑器。</summary>
+        private void UpdateLeftWidth()
+        {
+            if (_layout == null || _layout.IsDisposed) return;
+
+            int clientW = ClientSize.Width;
+            if (clientW <= 0) return;
+
+            int wCompact = UiFit.Scale(this, 1200);
+            int wWide = UiFit.Scale(this, 1440);
+            int left = clientW < wCompact ? 320 : clientW < wWide ? 360 : 400;
+
+            // 保护自定义报文区: 再窄也不让左栏吃掉编辑器的最小可用宽度
+            int maxLeft = Math.Max(280, clientW - UiFit.Scale(this, 360));
+            left = Math.Min(left, maxLeft);
+
+            if (_layout.ColumnStyles[0] is ColumnStyle cs && cs.SizeType == SizeType.Absolute && (int)cs.Width != left)
+                cs.Width = left;
         }
 
         // ------------------------------------------------------------------ 左: 固件指令集
@@ -50,7 +80,7 @@ namespace IotLinkLab
             var card = new Card
             {
                 Dock = DockStyle.Fill, Padding = new Padding(Theme.Pad),
-                Margin = new Padding(0, 0, 12, 0)               // 左右卡片之间留白 12
+                Margin = new Padding(0, 0, Theme.GapLg, 0)      // 左右卡片之间只计算一次 16px 间距
             };
 
             var grid = new TableLayoutPanel
@@ -92,22 +122,29 @@ namespace IotLinkLab
             Label tMode = SectionTitle("工作模式");
             grid.Controls.Add(tMode, 0, 2);
             grid.Controls.Add(CommandRow(
-                MakeCmd("mode-0 自动", Theme.Primary),
-                MakeCmd("mode-1 手动", Theme.Primary)), 0, 3);
+                MakeCmd("mode-0 自动"),
+                MakeCmd("mode-1 手动")), 0, 3);
 
             // ---- 天窗舵机 ----
             Label tServo = SectionTitle("天窗舵机");
             grid.Controls.Add(tServo, 0, 4);
             grid.Controls.Add(CommandRow(
-                MakeCmd("DUOJ-1 开窗180°", Theme.Teal),
-                MakeCmd("DUOJ-0 关窗0°", Theme.Teal)), 0, 5);
+                MakeCmd("DUOJ-1 开窗180°"),
+                MakeCmd("DUOJ-0 关窗0°")), 0, 5);
 
             // ---- 风扇电机 ----
             Label tMotor = SectionTitle("风扇电机");
             grid.Controls.Add(tMotor, 0, 6);
             grid.Controls.Add(CommandRow(
-                MakeCmd("MOTOR-1 全速", Theme.Indigo),
-                MakeCmd("MOTOR-0 停止", Theme.Indigo)), 0, 7);
+                MakeCmd("MOTOR-1 全速"),
+                MakeCmd("MOTOR-0 停止")), 0, 7);
+
+            // 同组、跨组的六个指令按钮统一列宽, 形成稳定的两列网格
+            if (_cmdButtons.Count > 0)
+            {
+                int width = _cmdButtons.Max(b => b.Width);
+                foreach (var btn in _cmdButtons) btn.Width = width;
+            }
 
             _tip.SetToolTip(tMode, "工作模式切换任意时刻生效");
             _tip.SetToolTip(tServo, "模式切换任意时刻生效，舵机/电机仅手动模式生效");
@@ -119,14 +156,14 @@ namespace IotLinkLab
             return card;
         }
 
-        /// <summary>一行两个命令按钮: 靠左排列, 不拉伸。</summary>
+        /// <summary>一行两个命令按钮: 靠左排列, 行距由按钮 Margin 统一控制。</summary>
         private static FlowLayoutPanel CommandRow(params Control[] buttons)
         {
             var row = new FlowLayoutPanel
             {
                 AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink,
                 WrapContents = false, FlowDirection = FlowDirection.LeftToRight,
-                BackColor = Color.Transparent, Margin = new Padding(0, 0, 0, 2)
+                BackColor = Color.Transparent, Margin = new Padding(0)
             };
             row.Controls.AddRange(buttons);
             return row;
@@ -165,8 +202,8 @@ namespace IotLinkLab
 
             var btnSend = new RoundedButton
             {
-                Text = "发送报文", FillColor = Theme.Danger,
-                Anchor = AnchorStyles.Right,                   // 6.3-3: 底部按钮贴右对齐
+                Text = "发送报文", FillColor = Theme.Primary,
+                Anchor = AnchorStyles.Right,                   // 底部按钮贴右对齐
                 Margin = new Padding(0, 6, 0, 0)
             };
             UiFit.SizeButton(btnSend, padTotal: 40, minWidth: 110);
@@ -195,17 +232,19 @@ namespace IotLinkLab
         /// 命令按钮: 宽度按文案实测 + 34 留白(6.3-1), 杜绝「DUOJ-1 开窗180°」贴边截字。
         /// ⚠️ 指令解析依赖 label.Split(' ')[0], 第一个空格之前必须始终是命令字。
         /// </summary>
-        private RoundedButton MakeCmd(string label, Color color)
+        private RoundedButton MakeCmd(string label)
         {
             var btn = new RoundedButton
             {
-                Text = label, Height = Theme.HeightButton, FillColor = color,
-                Margin = new Padding(0, 0, 10, 8)
+                Text = label, Height = Theme.HeightButton,
+                FillColor = Theme.Primary, TextColor = Theme.Primary, Outline = true,
+                Margin = new Padding(0, 0, Theme.GapSm, Theme.GapSm)
             };
             UiFit.SizeButton(btn, padTotal: 34);
             string cmd = label.Split(' ')[0];
             btn.Click += (s, e) => Send(cmd);
             _tip.SetToolTip(btn, $"发送 {cmd}");
+            _cmdButtons.Add(btn);
             return btn;
         }
 

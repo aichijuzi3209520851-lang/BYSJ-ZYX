@@ -13,7 +13,12 @@ namespace IotLinkLab
         private ListView _list = null!;
         private TextBox _detail = null!, _topicInput = null!;
         private CheckBox _chkPause = null!;
-        private Label _statLabel = null!;
+        private Label _statLabel = null!, _detailTitle = null!;
+        private SplitContainer _monSplit = null!;
+        private bool _compactList;
+        private bool _monSplitUser;
+        private double _monSplitRatio = 0.58;
+        private bool _monSplitSuppress;
         private readonly List<ListViewItem> _pending = new();
         private readonly Stopwatch _rateWatch = Stopwatch.StartNew();
         private readonly ToolTip _tip = new();
@@ -44,77 +49,122 @@ namespace IotLinkLab
 
             var body = new TableLayoutPanel
             {
-                Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 3,
+                Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 2,
                 BackColor = Color.Transparent, Margin = new Padding(0), Padding = new Padding(0)
             };
             body.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100f));
-            body.RowStyles.Add(new RowStyle(SizeType.AutoSize));      // 顶栏: 高度随内容自适应, 不再固定 44 硬塞
-            body.RowStyles.Add(new RowStyle(SizeType.Percent, 60f));  // 列表
-            body.RowStyles.Add(new RowStyle(SizeType.Percent, 40f));  // 详情
+            body.RowStyles.Add(new RowStyle(SizeType.AutoSize));      // 顶栏
+            body.RowStyles.Add(new RowStyle(SizeType.Percent, 100f)); // 列表 + 详情(可拖拽)
 
             body.Controls.Add(BuildTopBar(), 0, 0);
+
+            _monSplit = new SplitContainer
+            {
+                Dock = DockStyle.Fill, Orientation = Orientation.Horizontal,
+                SplitterWidth = 8, BackColor = Theme.PageBg,
+                Panel1MinSize = 140, Panel2MinSize = 112, Margin = new Padding(0)
+            };
+            _monSplit.Panel1.BackColor = Theme.PageBg;
+            _monSplit.Panel2.BackColor = Theme.PageBg;
+            _monSplit.SplitterMoved += (s, e) =>
+            {
+                if (_monSplitSuppress || _monSplit.IsDisposed) return;
+                int usable = _monSplit.Height - _monSplit.SplitterWidth;
+                if (usable > _monSplit.Panel1MinSize + _monSplit.Panel2MinSize)
+                {
+                    _monSplitRatio = (double)_monSplit.SplitterDistance / usable;
+                    _monSplitUser = true;
+                }
+            };
+
             _list = BuildList();
-            body.Controls.Add(_list, 0, 1);
-            body.Controls.Add(BuildDetail(), 0, 2);
+            _monSplit.Panel1.Controls.Add(_list);
+            _monSplit.Panel2.Controls.Add(BuildDetail());
+            body.Controls.Add(_monSplit, 0, 1);
+
             Controls.Add(body);
+            Resize += (s, e) => ApplyMonSplit();
+        }
+
+        private void ApplyMonSplit()
+        {
+            if (_monSplit == null || _monSplit.IsDisposed || _monSplitUser) return;
+
+            int usable = _monSplit.Height - _monSplit.SplitterWidth;
+            if (usable <= _monSplit.Panel1MinSize + _monSplit.Panel2MinSize) return;
+
+            int target = (int)Math.Round(usable * _monSplitRatio);
+            target = Math.Max(_monSplit.Panel1MinSize, Math.Min(usable - _monSplit.Panel2MinSize, target));
+            if (_monSplit.SplitterDistance == target) return;
+
+            _monSplitSuppress = true;
+            try { _monSplit.SplitterDistance = target; }
+            finally { _monSplitSuppress = false; }
         }
 
         // ------------------------------------------------------------------ 顶栏
         private Control BuildTopBar()
         {
-            var top = new FlowLayoutPanel
+            var top = new TableLayoutPanel
             {
-                AutoSize = true,
-                AutoSizeMode = AutoSizeMode.GrowAndShrink,
-                WrapContents = false,
-                FlowDirection = FlowDirection.LeftToRight,
-                BackColor = Color.Transparent,
-                Margin = new Padding(0, 0, 0, 12),              // 顶栏 → 列表留白 ≥ 10
-                Anchor = AnchorStyles.Left | AnchorStyles.Top
+                Dock = DockStyle.Fill, ColumnCount = 6, RowCount = 1,
+                BackColor = Color.Transparent, Margin = new Padding(0, 0, 0, Theme.GapMd)
             };
+            top.RowStyles.Add(new RowStyle(SizeType.Absolute, Theme.HeightButton));
+            top.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+            top.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100f));
+            top.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+            top.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+            top.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+            top.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
 
             var lblTopic = new Label
             {
                 Text = "订阅主题", AutoSize = true, Font = Theme.Ui(9.5F, bold: true),
                 ForeColor = Theme.TextSecondary, BackColor = Color.Transparent,
-                Margin = new Padding(8, 15, 8, 8)              // 四边均 ≥ 8(6.2-1); 15 = (48-18)/2 垂直居中
+                Anchor = AnchorStyles.Left, Margin = new Padding(0, 7, Theme.GapSm, 0)
             };
-            top.Controls.Add(lblTopic);
-
             _topicInput = new TextBox
             {
                 Font = Theme.Mono(9.5F), Text = "green/data", BorderStyle = BorderStyle.FixedSingle,
-                Margin = new Padding(0, 12, 10, 8)              // 12 = 8 + (32-24)/2
+                Anchor = AnchorStyles.Left | AnchorStyles.Right, Margin = new Padding(0, 4, 10, 0)
             };
-            // 宽度按实测文案算(U1 / 6.2-1), 不写死 200
-            _topicInput.Width = UiFit.TextWidth("green/data", _topicInput.Font) + UiFit.Scale(_topicInput, 48);
-            top.Controls.Add(_topicInput);
 
-            var btnAdd = new RoundedButton { Text = "添加订阅", FillColor = Theme.Teal, Margin = new Padding(0, 8, 10, 8) };
-            UiFit.SizeButton(btnAdd, padTotal: 40, minWidth: 96);   // 6.2-3: 按钮一律实测宽度
+            var btnAdd = new RoundedButton { Text = "添加订阅", FillColor = Theme.Teal, Anchor = AnchorStyles.Left, Margin = new Padding(0, 0, 10, 0) };
+            UiFit.SizeButton(btnAdd, padTotal: 40, minWidth: 96);
             btnAdd.Click += BtnAdd_Click;
-            top.Controls.Add(btnAdd);
-
-            var btnClear = new RoundedButton { Text = "清空记录", FillColor = Theme.TextTertiary, Margin = new Padding(0, 8, 10, 8) };
-            UiFit.SizeButton(btnClear, padTotal: 40, minWidth: 96);
-            btnClear.Click += (s, e) => { _list.Items.Clear(); _detail.Clear(); _count = 0; UpdateStat(); };
-            top.Controls.Add(btnClear);
 
             _chkPause = new CheckBox
             {
-                Text = "暂停接收", AutoSize = true, Font = Theme.Ui(9.5F), ForeColor = Theme.TextPrimary,
-                BackColor = Color.Transparent,
-                Margin = new Padding(8, 14, 10, 8)              // 14 = 8 + (32-20)/2; 左 8 与按钮组拉开距离
+                Text = "暂停接收", AutoSize = true, Font = Theme.Ui(9F), ForeColor = Theme.TextPrimary,
+                BackColor = Color.Transparent, Anchor = AnchorStyles.Left,
+                Margin = new Padding(0, 6, 10, 0)
             };
-            top.Controls.Add(_chkPause);
+
+            var btnClear = new RoundedButton { Text = "清空记录", FillColor = Theme.TextTertiary, Outline = true, TextColor = Theme.TextSecondary, Anchor = AnchorStyles.Left, Margin = new Padding(0, 0, 10, 0) };
+            UiFit.SizeButton(btnClear, padTotal: 40, minWidth: 96);
+            btnClear.Click += (s, e) =>
+            {
+                _list.Items.Clear();
+                _detail.Clear();
+                _detailTitle.Text = "载荷全文";
+                _count = 0;
+                UpdateStat();
+            };
 
             _statLabel = new Label
             {
                 Text = "已接收 0 条", AutoSize = true, Font = Theme.Ui(9.5F, bold: true),
                 ForeColor = Theme.Primary, BackColor = Color.Transparent,
-                Margin = new Padding(12, 15, 0, 8)
+                Anchor = AnchorStyles.Right, Margin = new Padding(0, 8, 0, 0)
             };
-            top.Controls.Add(_statLabel);
+
+            top.Controls.Add(lblTopic, 0, 0);
+            top.Controls.Add(_topicInput, 1, 0);
+            top.Controls.Add(btnAdd, 2, 0);
+            top.Controls.Add(_chkPause, 3, 0);
+            top.Controls.Add(btnClear, 4, 0);
+            top.Controls.Add(_statLabel, 5, 0);
 
             _tip.SetToolTip(lblTopic, "订阅主题: 支持 MQTT 通配符, 例如 green/data、greenhouse/+/data");
             _tip.SetToolTip(_topicInput, "输入主题后点「添加订阅」，回车不会发送");
@@ -132,8 +182,7 @@ namespace IotLinkLab
             {
                 Dock = DockStyle.Fill, View = View.Details, FullRowSelect = true, GridLines = false,
                 BackColor = Theme.FieldBg, BorderStyle = BorderStyle.FixedSingle, Font = Theme.Mono(9F),
-                HideSelection = false, MultiSelect = false,
-                Margin = new Padding(0, 0, 0, 12)               // 列表 → 详情卡留白 ≥ 10
+                HideSelection = false, MultiSelect = false, Margin = new Padding(0)
             };
             list.Columns.Add("时间");
             list.Columns.Add("主题");
@@ -151,14 +200,17 @@ namespace IotLinkLab
                 // 旧代码取 SubItems[4] 会抛越界异常, 这里优先 Tag, 再退回最后一个子项。
                 string payload = sel.Tag as string ?? sel.SubItems[sel.SubItems.Count - 1].Text;
                 _detail.Text = payload;
+                _detailTitle.Text = _compactList
+                    ? $"载荷全文 · {payload.Length} 字符"
+                    : "载荷全文";
                 MessageSelected?.Invoke(payload);
             };
             return list;
         }
 
         /// <summary>
-        /// 列宽动态分配: 时间 110 / 主题 max(140, 客户区宽度*18%) / 长度 60 / 预览 = 剩余宽度。
-        /// 用 ListView 的实际客户区宽度(已扣掉竖向滚动条), 所以不会冒出横向滚动条吃掉内容。
+        /// 列宽动态分配: 标准模式 时间112 / 主题20% / 长度64 / 预览=剩余;
+        /// 紧凑模式隐藏长度列, 完整长度显示在详情标题中, 保证预览列仍可用。
         /// </summary>
         private void FitColumns(ListView list)
         {
@@ -170,16 +222,17 @@ namespace IotLinkLab
             _fitDepth++;
             try
             {
-                int wTime = UiFit.Scale(list, 110);
-                int wLength = UiFit.Scale(list, 60);
-                int wTopic = Math.Max(UiFit.Scale(list, 140), (int)Math.Round(clientW * 0.18));
+                _compactList = clientW < UiFit.Scale(list, 1200);
+                int wTime = UiFit.Scale(list, _compactList ? 96 : 112);
+                int wLength = _compactList ? 0 : UiFit.Scale(list, 64);
+                int wTopic = Math.Max(UiFit.Scale(list, _compactList ? 140 : 160), (int)Math.Round(clientW * 0.20));
                 int wPreview = clientW - wTime - wTopic - wLength;
 
-                int minPreview = UiFit.Scale(list, 160);
+                int minPreview = UiFit.Scale(list, _compactList ? 180 : 240);
                 if (wPreview < minPreview)
                 {
-                    // 窗口偏窄: 先把主题列压到 110 的下限, 保住预览列
-                    wTopic = Math.Max(UiFit.Scale(list, 110), wTopic - (minPreview - wPreview));
+                    // 窗口偏窄: 先把主题列压到 120 的下限, 保住预览列
+                    wTopic = Math.Max(UiFit.Scale(list, 120), wTopic - (minPreview - wPreview));
                     wPreview = clientW - wTime - wTopic - wLength;
                 }
                 if (wPreview < 0) wPreview = 0;   // 极端窄窗口: 宁可留空也不超出客户区
@@ -221,15 +274,15 @@ namespace IotLinkLab
             grid.RowStyles.Add(new RowStyle(SizeType.AutoSize));
             grid.RowStyles.Add(new RowStyle(SizeType.Percent, 100f));
 
-            Label title = UiFit.SectionTitle("载荷全文");
-            title.Margin = new Padding(0, 0, 0, 8);
-            grid.Controls.Add(title, 0, 0);
+            _detailTitle = UiFit.SectionTitle("载荷全文");
+            _detailTitle.Margin = new Padding(0, 0, 0, 8);
+            grid.Controls.Add(_detailTitle, 0, 0);
 
             _detail = new TextBox
             {
                 Dock = DockStyle.Fill, Multiline = true, ReadOnly = true, ScrollBars = ScrollBars.Both,
                 BackColor = Theme.FieldBg, Font = Theme.Mono(9.5F), BorderStyle = BorderStyle.FixedSingle,
-                WordWrap = false, Margin = new Padding(0)
+                WordWrap = false, Margin = new Padding(0), Text = "选择一条消息查看完整载荷"
             };
             grid.Controls.Add(_detail, 0, 1);
 

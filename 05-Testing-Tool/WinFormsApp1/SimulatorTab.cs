@@ -24,7 +24,7 @@ namespace IotLinkLab
         private ComboBox _comPort = null!, _comBaud = null!;
         private SerialPort? _serial;
         private Label _stateServo = null!, _stateMotor = null!, _stateMode = null!;   // 模拟设备实时状态
-        private PictureBox _icoServo = null!, _icoMotor = null!, _icoMode = null!;    // 状态条图标(22×22)
+        private PictureBox _icoServo = null!, _icoMotor = null!;                      // 状态条图标(22×22), 模式用文字徽章
         private ToolTip _tips = null!;                                                // 说明性长句的唯一去处
 
         private System.Windows.Forms.Timer _timer = null!;
@@ -63,16 +63,16 @@ namespace IotLinkLab
 
             _tips = new ToolTip { AutoPopDelay = 15000, InitialDelay = 350, ReshowDelay = 150 };
 
-            // 两列(左 42 / 右 58) + 底部整宽状态条; 第 0 行吃满全部高度 → 页面下方没有死白
+            // 两列(左 38 / 右 62) + 底部整宽状态条; 右侧优先承载输出预览
             var root = new TableLayoutPanel
             {
                 Dock = DockStyle.Fill, ColumnCount = 2, RowCount = 2,
                 BackColor = Color.Transparent, Margin = new Padding(0)
             };
-            root.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 42f));
-            root.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 58f));
+            root.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 38f));
+            root.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 62f));
             root.RowStyles.Add(new RowStyle(SizeType.Percent, 100f));   // 两张卡片
-            root.RowStyles.Add(new RowStyle(SizeType.AutoSize));        // 底部状态条
+            root.RowStyles.Add(new RowStyle(SizeType.Absolute, 56));    // 底部状态条
 
             root.Controls.Add(BuildLeftCard(), 0, 0);
             root.Controls.Add(BuildRightCard(), 1, 0);
@@ -90,7 +90,7 @@ namespace IotLinkLab
         /// <summary>左卡: 场景预设 → 基础数值 → 帧模板(吃掉卡片剩余高度)。</summary>
         private Card BuildLeftCard()
         {
-            var card = new Card { Dock = DockStyle.Fill, Padding = new Padding(Theme.Pad), Margin = new Padding(0, 0, 12, 0) };
+            var card = new Card { Dock = DockStyle.Fill, Padding = new Padding(Theme.Pad), Margin = new Padding(0, 0, Theme.GapLg, 0) };
 
             var layout = new TableLayoutPanel
             {
@@ -151,30 +151,42 @@ namespace IotLinkLab
             return card;
         }
 
-        /// <summary>右卡: 发送控制 → 串口输出 → 帧预览 / JSON 预览(两块预览分摊剩余高度)。</summary>
+        /// <summary>右卡: 顶部「发送控制 + 串口输出」并排, 下方把剩余高度优先交给帧 / JSON 预览。</summary>
         private Card BuildRightCard()
         {
             var card = new Card { Dock = DockStyle.Fill, Padding = new Padding(Theme.Pad), Margin = new Padding(0) };
 
             var layout = new TableLayoutPanel
             {
-                Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 11,
+                Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 5,
                 BackColor = Color.Transparent, Margin = new Padding(0)
             };
             layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100f));
-            layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));        // 0 发送控制 标题
-            layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));        // 1 周期 + 数值抖动
-            layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));        // 2 抖动幅度
-            layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));        // 3 两个按钮
-            layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));        // 4 串口输出 标题
-            layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));        // 5 同步写串口
-            layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));        // 6 端口 + 波特率
-            layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));        // 7 帧预览 标题
-            layout.RowStyles.Add(new RowStyle(SizeType.Percent, 34f));    // 8 帧预览(吃掉剩余高度)
-            layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));        // 9 JSON 预览 标题
-            layout.RowStyles.Add(new RowStyle(SizeType.Percent, 66f));    // 10 JSON 预览(吃掉剩余高度)
+            layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));        // 0 控制区: 发送 + 串口
+            layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));        // 1 帧预览 标题
+            layout.RowStyles.Add(new RowStyle(SizeType.Percent, 34f));    // 2 帧预览
+            layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));        // 3 JSON 预览 标题
+            layout.RowStyles.Add(new RowStyle(SizeType.Percent, 66f));    // 4 JSON 预览
 
-            layout.Controls.Add(MakeTitle("发送控制", 0), 0, 0);
+            // ---------- 控制区 ----------
+            var topGrid = new TableLayoutPanel
+            {
+                Dock = DockStyle.Fill, ColumnCount = 2, RowCount = 1,
+                BackColor = Color.Transparent, Margin = new Padding(0, 0, 0, Theme.GapMd)
+            };
+            topGrid.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 55f));
+            topGrid.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 45f));
+            topGrid.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+
+            var sendPanel = new TableLayoutPanel
+            {
+                Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 3,
+                BackColor = Color.Transparent, Margin = new Padding(0, 0, Theme.GapLg, 0)
+            };
+            sendPanel.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100f));
+            sendPanel.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+            sendPanel.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+            sendPanel.RowStyles.Add(new RowStyle(SizeType.AutoSize));
 
             _numInterval = new NumericUpDown
             {
@@ -186,28 +198,28 @@ namespace IotLinkLab
             _chkJitter = new CheckBox
             {
                 Text = "数值抖动", AutoSize = true, Font = Theme.Ui(9F), Checked = false,
-                Margin = new Padding(0)
+                Margin = new Padding(0, 0, 10, 0)
             };
             _tips.SetToolTip(_chkJitter, "勾选后每帧在基础值上叠加 ±抖动幅度 的随机波动,模拟真实传感器读数。");
+
+            _numJitter = new NumericUpDown
+            {
+                Minimum = 0, Maximum = 20, Value = 2, Font = Theme.Ui(9F),
+                Enabled = false, Margin = new Padding(0)
+            };
+            UiFit.FitNumeric(_numJitter);
+            _chkJitter.CheckedChanged += (s, e) => _numJitter.Enabled = _chkJitter.Checked;
 
             var sendRow = SingleRow(
                 new Label { Text = "周期", AutoSize = true, Font = Theme.Ui(9F), ForeColor = Theme.TextSecondary, Margin = new Padding(0, 0, 6, 0) },
                 _numInterval,
-                new Label { Text = "秒", AutoSize = true, Font = Theme.Ui(9F), ForeColor = Theme.TextSecondary, Margin = new Padding(0, 0, 26, 0) },
-                _chkJitter);
-            sendRow.Margin = new Padding(0, 0, 0, 10);
-            layout.Controls.Add(sendRow, 0, 1);
-
-            _numJitter = new NumericUpDown
-            {
-                Minimum = 0, Maximum = 20, Value = 2, Font = Theme.Ui(9F), Margin = new Padding(0)
-            };
-            UiFit.FitNumeric(_numJitter);
-            var jitterRow = SingleRow(
-                new Label { Text = "抖动幅度 ±", AutoSize = true, Font = Theme.Ui(8.5F), ForeColor = Theme.TextSecondary, Margin = new Padding(0, 0, 6, 0) },
+                new Label { Text = "秒", AutoSize = true, Font = Theme.Ui(9F), ForeColor = Theme.TextSecondary, Margin = new Padding(0, 0, 18, 0) },
+                _chkJitter,
+                new Label { Text = "±", AutoSize = true, Font = Theme.Ui(9F), ForeColor = Theme.TextSecondary, Enabled = false, Margin = new Padding(0, 0, 6, 0) },
                 _numJitter);
-            jitterRow.Margin = new Padding(0, 0, 0, 12);
-            layout.Controls.Add(jitterRow, 0, 2);
+            sendRow.Margin = new Padding(0, 0, 0, Theme.GapSm);
+            sendPanel.Controls.Add(MakeTitle("发送控制", 0), 0, 0);
+            sendPanel.Controls.Add(sendRow, 0, 1);
 
             _btnOnce = new RoundedButton { Text = "手动发一帧", FillColor = Theme.Teal, Margin = new Padding(0, 0, 12, 0) };
             _btnOnce.Click += (s, e) => EmitFrame("手动");
@@ -216,97 +228,111 @@ namespace IotLinkLab
             _tips.SetToolTip(_btnOnce, "立即按当前场景与数值生成一帧并发布。");
             _tips.SetToolTip(_btnStart, "按上面的周期自动轮发;再次点击停止。");
             var btnRow = SingleRow(_btnOnce, _btnStart);
-            btnRow.Margin = new Padding(0, 0, 0, 0);
-            layout.Controls.Add(btnRow, 0, 3);
+            sendPanel.Controls.Add(btnRow, 0, 2);
 
-            layout.Controls.Add(MakeTitle("串口输出"), 0, 4);
+            var serialPanel = new TableLayoutPanel
+            {
+                Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 3,
+                BackColor = Color.Transparent, Margin = new Padding(0)
+            };
+            serialPanel.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100f));
+            serialPanel.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+            serialPanel.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+            serialPanel.RowStyles.Add(new RowStyle(SizeType.AutoSize));
 
             _chkSerial = new CheckBox
             {
                 Text = "同步写串口", AutoSize = true, Font = Theme.Ui(9F),
-                Anchor = AnchorStyles.Left, Margin = new Padding(0, 0, 0, 10)
+                Anchor = AnchorStyles.Left, Margin = new Padding(0, 0, 0, Theme.GapSm)
             };
             _tips.SetToolTip(_chkSerial, "除 MQTT 发布外,把同一份帧文本写入所选串口(配合虚拟串口对,可让真实上位机走完整链路)。");
-            layout.Controls.Add(_chkSerial, 0, 5);
 
             _comPort = new ComboBox
             {
                 DropDownStyle = ComboBoxStyle.DropDownList, Font = Theme.Ui(9F),
-                Margin = new Padding(0, 0, 10, 0)
+                Anchor = AnchorStyles.Left, Margin = new Padding(0, 0, 10, 0)
             };
             _tips.SetToolTip(_comPort, "可选的真实/虚拟串口;没有选择时串口输出自动跳过(不影响 MQTT 发布)。");
+            _comPort.Enabled = false;
 
             _comBaud = new ComboBox
             {
-                DropDownStyle = ComboBoxStyle.DropDownList, Font = Theme.Ui(9F), Margin = new Padding(0)
+                DropDownStyle = ComboBoxStyle.DropDownList, Font = Theme.Ui(9F),
+                Anchor = AnchorStyles.Left, Margin = new Padding(0)
             };
             _comBaud.Items.AddRange(new object[] { "9600", "19200", "115200" });
             _comBaud.SelectedIndex = 0;
+            _comBaud.Enabled = false;
+            _chkSerial.CheckedChanged += (s, e) =>
+            {
+                _comPort.Enabled = _chkSerial.Checked;
+                _comBaud.Enabled = _chkSerial.Checked;
+            };
 
-            var serRow = SingleRow(_comPort, _comBaud);
-            serRow.Margin = new Padding(0, 0, 0, 6);
-            layout.Controls.Add(serRow, 0, 6);
+            serialPanel.Controls.Add(MakeTitle("串口输出", 0), 0, 0);
+            serialPanel.Controls.Add(_chkSerial, 0, 1);
+            serialPanel.Controls.Add(SingleRow(_comPort, _comBaud), 0, 2);
 
-            layout.Controls.Add(MakeTitle("帧预览"), 0, 7);
-            _framePreview = MakePreview(Theme.Mono(9.5F));
+            topGrid.Controls.Add(sendPanel, 0, 0);
+            topGrid.Controls.Add(serialPanel, 1, 0);
+            layout.Controls.Add(topGrid, 0, 0);
+
+            // ---------- 预览区 ----------
+            layout.Controls.Add(MakeTitle("帧预览", 0), 0, 1);
+            _framePreview = MakePreview(Theme.Mono(9.5F), wordWrap: true);
+            _framePreview.MinimumSize = new Size(0, UiFit.Scale(this, 48));
             _tips.SetToolTip(_framePreview, "与真实串口输出逐字节一致的帧文本(固件 printf 视角)。");
-            layout.Controls.Add(_framePreview, 0, 8);
+            layout.Controls.Add(_framePreview, 0, 2);
 
-            layout.Controls.Add(MakeTitle("JSON 预览"), 0, 9);
-            _jsonPreview = MakePreview(Theme.Mono(9F));
+            layout.Controls.Add(MakeTitle("JSON 预览", 0), 0, 3);
+            _jsonPreview = MakePreview(Theme.Mono(9F), wordWrap: true);
+            _jsonPreview.MinimumSize = new Size(0, UiFit.Scale(this, 96));
             _tips.SetToolTip(_jsonPreview, "按与上位机同一套正则解析出的字段,以及最终发布的 green/data JSON。");
-            layout.Controls.Add(_jsonPreview, 0, 10);
+            layout.Controls.Add(_jsonPreview, 0, 4);
 
             card.Controls.Add(layout);
             return card;
         }
 
-        /// <summary>底部设备状态条(整宽): 22×22 图标 + 文字, 高度随内容自适应, 不裁字。</summary>
+        /// <summary>底部设备状态条(整宽): 22×22 图标 + 文字, 状态项按三等分网格展开。</summary>
         private Control BuildStateBar()
         {
-            // 外层 Flow 只负责「整宽 + 顶部留白」, 内层卡片按内容收缩, 不拉伸图标
-            var wrap = new FlowLayoutPanel
-            {
-                Dock = DockStyle.Fill, AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink,
-                WrapContents = false, BackColor = Color.Transparent, Margin = new Padding(0, 12, 0, 0)
-            };
             var strip = new Card
             {
-                Radius = 10, AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink,
-                Padding = new Padding(16, 8, 16, 8), Margin = new Padding(0)
+                Dock = DockStyle.Fill, Radius = 10,
+                Padding = new Padding(12, 8, 12, 8), Margin = new Padding(0, Theme.GapMd, 0, 0)
             };
             var cells = new TableLayoutPanel
             {
-                AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, ColumnCount = 4, RowCount = 1,
+                Dock = DockStyle.Fill, ColumnCount = 4, RowCount = 1,
                 BackColor = Color.Transparent, Margin = new Padding(0)
             };
-            for (int i = 0; i < 4; i++) cells.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
-            cells.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+            cells.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+            cells.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 33f));
+            cells.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 33f));
+            cells.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 33f));
+            cells.RowStyles.Add(new RowStyle(SizeType.Percent, 100f));
 
             var caption = new Label
             {
                 Text = "设备状态", AutoSize = true, Font = Theme.Ui(8.5F), ForeColor = Theme.TextTertiary,
-                Anchor = AnchorStyles.Left, Margin = new Padding(0, 0, 26, 0)
+                Anchor = AnchorStyles.Left, Margin = new Padding(0, 5, 24, 0)
             };
             _tips.SetToolTip(caption, "模拟设备固件侧的实时状态,随控制台回显指令变化(自动模式下设备指令被固件忽略)。");
             cells.Controls.Add(caption, 0, 0);
 
             var servo = MakeStateCell("天窗", "win-closed");
             var motor = MakeStateCell("风扇", "fan-off");
-            var mode = MakeStateCell("模式", "air-ok");
-            _stateServo = servo.Value; _icoServo = servo.Icon;
-            _stateMotor = motor.Value; _icoMotor = motor.Icon;
-            _stateMode = mode.Value; _icoMode = mode.Icon;
+            var mode = MakeStateCell("模式", null);
+            _stateServo = servo.Value; _icoServo = servo.Icon!;
+            _stateMotor = motor.Value; _icoMotor = motor.Icon!;
+            _stateMode = mode.Value;
             cells.Controls.Add(servo.Cell, 1, 0);
             cells.Controls.Add(motor.Cell, 2, 0);
             cells.Controls.Add(mode.Cell, 3, 0);
 
-            // 最后一格不留右侧空档
-            mode.Cell.Margin = new Padding(0);
-
             strip.Controls.Add(cells);
-            wrap.Controls.Add(strip);
-            return wrap;
+            return strip;
         }
 
         /// <summary>分组标题: 样式单源走 UiFit.SectionTitle, 只补间距(分组之间 ≥ 12)。</summary>
@@ -372,34 +398,42 @@ namespace IotLinkLab
             return (num, cap);
         }
 
-        /// <summary>状态单元格: 22×22 图标 + 名称 + 值, 图标随状态切换(win / fan / air)。</summary>
-        private (Label Value, PictureBox Icon, TableLayoutPanel Cell) MakeStateCell(string title, string iconName)
+        /// <summary>状态单元格: 22×22 图标 + 名称 + 值; 图标可为空(模式用文字, 不借空气质量图标)。</summary>
+        private (Label Value, PictureBox? Icon, TableLayoutPanel Cell) MakeStateCell(string title, string? iconName)
         {
-            var pic = new PictureBox
+            PictureBox? pic = null;
+            var items = new List<Control>();
+            if (iconName != null)
             {
-                SizeMode = PictureBoxSizeMode.Zoom, Size = new Size(22, 22),
-                BackColor = Color.Transparent, Image = LoadIcon(iconName), Margin = new Padding(0, 0, 6, 0)
-            };
+                pic = new PictureBox
+                {
+                    SizeMode = PictureBoxSizeMode.Zoom, Size = new Size(22, 22),
+                    BackColor = Color.Transparent, Image = LoadIcon(iconName), Margin = new Padding(0, 3, 6, 0)
+                };
+                items.Add(pic);
+            }
             var cap = new Label
             {
                 Text = title, AutoSize = true, Font = Theme.Ui(8.5F), ForeColor = Theme.TextTertiary,
-                Margin = new Padding(0, 0, 6, 0)
+                Margin = new Padding(0, 5, 6, 0)
             };
             var val = new Label
             {
                 Text = "--", AutoSize = true, Font = Theme.Ui(9F, bold: true),
-                ForeColor = Theme.TextSecondary, Margin = new Padding(0)
+                ForeColor = Theme.TextSecondary, Margin = new Padding(0, 5, 0, 0)
             };
-            var cell = SingleRow(pic, cap, val);
-            cell.Margin = new Padding(0, 0, 26, 0);
+            items.Add(cap);
+            items.Add(val);
+            var cell = SingleRow(items.ToArray());
+            cell.Margin = new Padding(0, 0, 24, 0);
             return (val, pic, cell);
         }
 
-        private static TextBox MakePreview(Font font) => new()
+        private static TextBox MakePreview(Font font, bool wordWrap = false) => new()
         {
             Multiline = true, Dock = DockStyle.Fill, ReadOnly = true, BackColor = Theme.FieldBg,
             Font = font, BorderStyle = BorderStyle.FixedSingle, ScrollBars = ScrollBars.Vertical,
-            Margin = new Padding(0)
+            WordWrap = wordWrap, Margin = new Padding(0)
         };
 
         /// <summary>所有下拉/数字框/按钮的宽度统一由 UiFit 实测(本文件不写死任何控件宽度)。</summary>
@@ -477,8 +511,6 @@ namespace IotLinkLab
 
             _stateMode.Text = ModeState == "MAN" ? "手动" : "自动";
             _stateMode.ForeColor = ModeState == "MAN" ? Theme.Warning : Theme.Teal;
-            // 模式段用 air-ok / air-bad 表示 自动(联动正常) / 手动(人工接管)
-            _icoMode.Image = LoadIcon(ModeState == "MAN" ? "air-bad" : "air-ok");
         }
 
         // ==================== 逻辑 ====================

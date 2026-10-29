@@ -11,6 +11,7 @@ namespace IotLinkLab
         // ---------- 品牌色 ----------
         public static readonly Color Primary = Color.FromArgb(21, 128, 61);       // 土绿
         public static readonly Color PrimaryDark = Color.FromArgb(14, 89, 44);
+        public static readonly Color OnPrimary = Color.FromArgb(252, 253, 252);   // 主色上的近白文字
         public static readonly Color Teal = Color.FromArgb(13, 148, 136);        // 链路青(数据方向)
         public static readonly Color Indigo = Color.FromArgb(79, 70, 229);       // 指令靛(下行)
 
@@ -24,7 +25,7 @@ namespace IotLinkLab
         public static readonly Color TextSecondary = Color.FromArgb(84, 104, 120);
         public static readonly Color TextTertiary = Color.FromArgb(122, 140, 154);
         public static readonly Color PageBg = Color.FromArgb(244, 247, 250);      // 冷白
-        public static readonly Color CardBg = Color.White;
+        public static readonly Color CardBg = Color.FromArgb(252, 253, 252);      // 近白, 带轻微品牌倾向
         public static readonly Color CardStroke = Color.FromArgb(226, 232, 236);
         public static readonly Color FieldBg = Color.FromArgb(248, 250, 251);
         public static readonly Color Divider = Color.FromArgb(235, 240, 243);
@@ -33,12 +34,18 @@ namespace IotLinkLab
         public static readonly Color LogWarn = Color.FromArgb(180, 121, 9);
         public static readonly Color LogErr = Color.FromArgb(200, 51, 44);
 
-        // ---------- 布局尺度 ----------
+        // ---------- 布局尺度(96 DPI 逻辑像素) ----------
         public const int RadiusCard = 12;
         public const int RadiusButton = 8;
         public const int HeightButton = 32;
-        public const int HeightInput = 30;
-        public const int Gap = 8;
+        public const int HeightInput = 32;
+        public const int HeightNav = 32;
+        public const int HeightSmallButton = 28;
+        public const int GapXs = 4;
+        public const int GapSm = 8;
+        public const int GapMd = 12;
+        public const int GapLg = 16;
+        public const int GapXl = 20;
         public const int Pad = 16;
 
         public static Font Ui(float size, bool bold = false)
