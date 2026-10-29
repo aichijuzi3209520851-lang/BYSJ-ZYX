@@ -65,9 +65,27 @@
   line-height: 1;
 }
 
+.conn-actions {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+  gap: 12rpx;
+  margin-left: 16rpx;
+}
+
+.conn-actions .conn-btn {
+  margin: 0;
+}
+
+.conn-btn--config {
+  background-color: rgba(255, 255, 255, 0.50);
+  color: var(--ink-secondary);
+  border: 1rpx solid var(--border-hair);
+}
+
 .conn-btn--ghost {
   background-color: rgba(255, 255, 255, 0.5);
-  color: var(--alarm);
+  color: var(--alarm-ink);
   border: 1rpx solid var(--alarm-line);
 }
 
@@ -75,13 +93,17 @@
   border: none;
 }
 
-/* ---------- 报警横幅(tint 玻璃底色见 glass 接管层) ---------- */
+/* ---------- 报警横幅(tint 玻璃底色与数据卡报警态一致) ---------- */
 .alarm-banner {
   display: flex;
   align-items: center;
   padding: 24rpx 28rpx;
-  margin-bottom: 24rpx;
+  margin-bottom: 20rpx;
   border-color: var(--alarm-line);
+}
+
+.alarm-banner.alarm-banner {
+  background-color: rgba(185, 71, 61, 0.14);
 }
 
 .alarm-icon {
@@ -102,8 +124,9 @@
 }
 
 .alarm-detail {
-  color: var(--alarm);
-  opacity: 0.78;
+  color: var(--alarm-ink);
+  font-weight: 500;
+  opacity: 1;
 }
 
 /* ---------- 数据网格 ---------- */
@@ -122,22 +145,16 @@
   transition: border-color 0.3s ease;
 }
 
-/* 温度/湿度主卡: 翡翠绿 tint 玻璃, 与普通卡拉开层级(P15) */
-.cell--primary.cell--primary {
+/* 同级别数据卡统一为翡翠绿 tint 玻璃, 不再区分主/次卡 */
+.cell.cell {
   background-color: rgba(20, 135, 92, 0.13);
-  border-color: rgba(20, 135, 92, 0.18);
+  border-color: rgba(20, 135, 92, 0.16);
 }
 
-/* 报警 tint 优先于主卡 tint(须放在 primary 规则之后, 同特异性后者胜出) */
+/* 报警 tint 优先于常规绿 tint(须放在同特异性规则之后) */
 .cell--alarm.cell--alarm {
   background-color: rgba(185, 71, 61, 0.16);
   border-color: var(--alarm-line);
-}
-
-/* 良好态空气质量: 轻绿 tint(报警态由 glass 接管层的 .cell--alarm 覆盖) */
-.cell--nice.cell--nice {
-  background-color: rgba(20, 135, 92, 0.10);
-  border-color: rgba(20, 135, 92, 0.16);
 }
 
 .cell-head {
@@ -255,7 +272,7 @@
   height: 72rpx;
   flex-shrink: 0;
   border-radius: 50%;
-  background-color: rgba(20, 135, 92, 0.14);
+  background-color: rgba(255, 255, 255, 0.55);
   box-shadow: inset 0 1rpx 0 rgba(255, 255, 255, 0.62);
 }
 
@@ -329,18 +346,23 @@
 }
 
 .field-label {
-  font-size: 30rpx;
-  font-weight: 500;
-  color: var(--ink-secondary);
+  font-size: 32rpx;
+  font-weight: 600;
+  color: var(--ink-primary);
   margin-bottom: 12rpx;
 }
 
 .field-input {
+  box-sizing: border-box;
+  width: 100%;
   min-height: 88rpx;
   padding: 0 24rpx;
-  background-color: rgba(255, 255, 255, 0.72);
-  border: 1rpx solid var(--border-hair);
+  background-color: rgba(255, 255, 255, 0.66);
+  border: 1rpx solid rgba(255, 255, 255, 0.78);
   border-radius: var(--radius-inner);
+  box-shadow:
+    inset 0 1rpx 0 rgba(255, 255, 255, 0.90),
+    0 2rpx 8rpx rgba(4, 18, 12, 0.05);
   font-size: 32rpx;
   color: var(--ink-primary);
 }
@@ -367,9 +389,10 @@
   justify-content: space-between;
   padding: 18rpx 24rpx;
   margin-bottom: 12rpx;
-  background-color: rgba(255, 255, 255, 0.6);
-  border: 1rpx solid var(--border-hair);
+  background-color: rgba(255, 255, 255, 0.66);
+  border: 1rpx solid rgba(255, 255, 255, 0.72);
   border-radius: var(--radius-inner);
+  box-shadow: inset 0 1rpx 0 rgba(255, 255, 255, 0.88);
 }
 
 .history-info {

@@ -9,6 +9,7 @@
 
   <view class="page-heading">
     <text class="page-heading-title">传感器</text>
+    <text class="page-heading-sub">5 项环境参数 · 1.5 秒刷新</text>
   </view>
 
   <!-- 连接状态栏 -->
@@ -20,10 +21,14 @@
         <text class="conn-sub t-caption" wx:if="{{mqttConnected}}">{{mqttTopic}}</text>
       </view>
     </view>
-    <button class="conn-btn {{mqttConnected ? 'conn-btn--ghost' : ''}}" size="mini"
-      bindtap="{{mqttConnected ? 'disconnectMqtt' : 'showMqttConfig'}}">
-      {{mqttConnected ? '断开' : '配置'}}
-    </button>
+    <view class="conn-actions">
+      <button wx:if="{{!mqttConnected && !connecting && mqttTopic}}"
+        class="conn-btn conn-btn--config" size="mini" bindtap="showMqttConfig">配置</button>
+      <button class="conn-btn {{mqttConnected ? 'conn-btn--ghost' : ''}}" size="mini"
+        bindtap="onConnBtnTap">
+        {{mqttConnected ? '断开' : (connecting ? '连接中' : (mqttTopic ? '重连' : '配置'))}}
+      </button>
+    </view>
   </view>
 
   <!-- 报警横幅(数据以固件上报的 hasAlarm 为准) -->
@@ -38,7 +43,7 @@
   <!-- 数据卡片网格 -->
   <view class="grid">
     <!-- 温度 -->
-    <view class="cell card cell--primary {{sensorData.temperature > thresholds.temperature ? 'cell--alarm' : ''}}">
+    <view class="cell card {{sensorData.temperature > thresholds.temperature ? 'cell--alarm' : ''}}">
       <view class="cell-head">
         <view class="cell-icon-wrap">
           <image class="cell-icon"
@@ -51,7 +56,7 @@
     </view>
 
     <!-- 湿度 -->
-    <view class="cell card cell--primary {{sensorData.humidity > thresholds.humidity ? 'cell--alarm' : ''}}">
+    <view class="cell card {{sensorData.humidity > thresholds.humidity ? 'cell--alarm' : ''}}">
       <view class="cell-head">
         <view class="cell-icon-wrap">
           <image class="cell-icon"
@@ -88,7 +93,7 @@
     </view>
 
     <!-- 空气质量(占满整行) -->
-    <view class="cell cell--wide card {{sensorData.airQuality === 'bad' ? 'cell--alarm' : ''}} {{sensorData.airQuality === 'nice' ? 'cell--nice' : ''}}">
+    <view class="cell cell--wide card {{sensorData.airQuality === 'bad' ? 'cell--alarm' : ''}}">
       <view class="cell-icon-wrap cell-icon-wrap--wide">
         <image class="cell-icon" src="{{sensorData.airQuality === 'bad' ? '/ICON/空气质量劣状态.png' : '/ICON/空气质量优状态.png'}}" mode="aspectFit" />
       </view>

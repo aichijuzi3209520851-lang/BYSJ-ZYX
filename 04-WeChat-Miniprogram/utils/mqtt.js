@@ -7,7 +7,7 @@
  *           PINGREQ/PINGRESP, DISCONNECT
  * 可靠性设计(资深物联网实践):
  *   1. CONNECT 携带 keep-alive, 并以 keep-alive/2 周期发送 PINGREQ 心跳
- *   2. 异常断开自动重连(指数退避 2s/4s/8s, 上限 MAX_RECONNECT 次), 手动断开不重连
+ *   2. 异常断开只上报状态, 不自动重连; 由用户在页面上手动重连
  *   3. CONNACK/SUBACK 返回码逐一校验, 失败通过 onState 上报
  *   4. 手动断开前发送 DISCONNECT 报文优雅退出, 避免 EMQX 侧会话滞留
  *
@@ -16,7 +16,7 @@
  *     host: '192.168.x.x', port: '8083',
  *     topics: ['green/data'],            // CONNACK 后自动订阅的主题列表
  *     clientIdPrefix: 'wx_sensor_',     // 客户端ID前缀(随机后缀防冲突)
- *     onState(state, info) {},          // connecting|connected|reconnecting|failed|closed
+ *     onState(state, info) {},          // connecting|connected|failed|closed
  *     onSubscribed(topic, qos) {},      // 每个 SUBACK 成功后触发一次
  *     onPayload(text, topic) {},        // PUBLISH 载荷(UTF-8 文本)
  *     onLog(level, msg) {}              // 调试日志透传
@@ -30,8 +30,6 @@
 
 const KEEP_ALIVE = 60            // MQTT keep-alive(秒)
 const PING_INTERVAL_MS = 30000   // PINGREQ 周期 = keep-alive/2
-const MAX_RECONNECT = 3          // 异常断开后的最大自动重连次数
-const RECONNECT_BASE_MS = 2000   // 重连基准退避(指数递增: 2s/4s/8s)
 
 /* ---------- 编码工具 ---------- */
 
@@ -72,10 +70,7 @@ function encodeRemainingLength(len) {
 function createMqttClient(opts) {
   let socketTask = null
   let pingTimer = null
-  let reconnectTimer = null
-  let reconnectCount = 0
   let packetIdSeq = 0
-  let manualClosed = false   // 用户主动断开标记(断开后不再自动重连)
   let connected = false      // 是否已收到 CONNACK
   const pendingQos1 = {}     // QoS1发布待确认表: packetId → {topic,message,ts}, 收PUBACK后清除
 
@@ -170,33 +165,46 @@ function createMqttClient(opts) {
       Date.now().toString(16) + Math.random().toString(16).slice(2, 6)
 
     teardownSocket()
-    manualClosed = false
-    reconnectCount = 0
     setState('connecting', { url })
 
     try {
-      socketTask = wx.connectSocket({
+      // 捕获本次 SocketTask, 旧连接的迟到事件(重连/页面切换)一律忽略
+      let task = null
+      task = wx.connectSocket({
         url,
         protocols: ['mqtt'],  // EMQX WebSocket 子协议
         fail: (err) => {
+          if (socketTask !== task) return
           log('error', 'WebSocket连接请求失败: ' + (err.errMsg || ''))
           setState('failed', { reason: '无法发起连接: ' + (err.errMsg || '未知错误'), url })
         }
       })
+      if (!task) {
+        log('error', 'WebSocket连接请求失败: 未返回 SocketTask')
+        setState('failed', { reason: '无法创建连接', url })
+        return
+      }
+      socketTask = task
 
-      socketTask.onOpen(() => {
+      task.onOpen(() => {
+        if (socketTask !== task) return
         log('info', 'WebSocket已建立, 发送MQTT CONNECT')
         sendBytes(buildConnect(clientId))
       })
 
-      socketTask.onMessage((res) => handlePacket(res.data))
+      task.onMessage((res) => {
+        if (socketTask !== task) return
+        handlePacket(res.data)
+      })
 
-      socketTask.onError((err) => {
+      task.onError((err) => {
+        if (socketTask !== task) return
         log('error', 'WebSocket错误: ' + (err.errMsg || ''))
         handleAbnormalClose('连接出现错误')
       })
 
-      socketTask.onClose((res) => {
+      task.onClose((res) => {
+        if (socketTask !== task) return
         log('info', 'WebSocket关闭 code=' + res.code)
         handleAbnormalClose(res.code === 1000 ? '连接已断开' : '连接异常断开')
       })
@@ -206,33 +214,15 @@ function createMqttClient(opts) {
     }
   }
 
-  // 统一处理异常断开: 停心跳 → 自动重连(未超次数) → 上报失败
+  // 统一处理异常断开: 停心跳并上报, 不自动重连
   function handleAbnormalClose(reason) {
     stopPingTimer()
     connected = false
-    if (manualClosed) {
-      setState('closed', { reason })
-      return
-    }
-
-    if (reconnectCount < MAX_RECONNECT) {
-      const delay = RECONNECT_BASE_MS * Math.pow(2, reconnectCount)
-      reconnectCount += 1
-      log('info', `${delay / 1000}s后进行第${reconnectCount}次重连`)
-      setState('reconnecting', { reason, delay, attempt: reconnectCount })
-      if (reconnectTimer) clearTimeout(reconnectTimer)
-      reconnectTimer = setTimeout(() => connect(), delay)
-    } else {
-      setState('failed', { reason: `${reason}, 已自动重试${MAX_RECONNECT}次仍失败` })
-    }
+    setState('closed', { reason })
   }
 
   function teardownSocket() {
     stopPingTimer()
-    if (reconnectTimer) {
-      clearTimeout(reconnectTimer)
-      reconnectTimer = null
-    }
     if (socketTask) {
       try { socketTask.close({}) } catch (e) { /* 连接可能已断, 忽略 */ }
       socketTask = null
@@ -337,9 +327,8 @@ function createMqttClient(opts) {
     return sendBytes(built.bytes)
   }
 
-  // 用户主动断开: 发送 DISCONNECT 后关闭, 不触发自动重连
+  // 用户主动断开: 发送 DISCONNECT 后关闭
   function disconnect() {
-    manualClosed = true
     if (socketTask && connected) {
       try { socketTask.send({ data: new Uint8Array([0xE0, 0x00]).buffer }) } catch (e) { /* 忽略 */ }
     }
@@ -349,7 +338,6 @@ function createMqttClient(opts) {
 
   // 页面卸载时释放资源(不再上报状态)
   function destroy() {
-    manualClosed = true
     teardownSocket()
   }
 

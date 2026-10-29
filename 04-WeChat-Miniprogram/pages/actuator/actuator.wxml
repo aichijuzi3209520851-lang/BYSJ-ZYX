@@ -9,6 +9,7 @@
 
   <view class="page-heading">
     <text class="page-heading-title">执行器</text>
+    <text class="page-heading-sub">天窗与风扇 · 双模式控制</text>
   </view>
 
   <!-- 连接状态栏 -->
@@ -20,10 +21,14 @@
         <text class="conn-sub t-caption" wx:if="{{mqttConnected}}">{{mqttTopic}}</text>
       </view>
     </view>
-    <button class="conn-btn {{mqttConnected ? 'conn-btn--ghost' : ''}}" size="mini"
-      bindtap="{{mqttConnected ? 'disconnectMqtt' : 'showMqttConfig'}}">
-      {{mqttConnected ? '断开' : '配置'}}
-    </button>
+    <view class="conn-actions">
+      <button wx:if="{{!mqttConnected && !connecting && mqttTopic}}"
+        class="conn-btn conn-btn--config" size="mini" bindtap="showMqttConfig">配置</button>
+      <button class="conn-btn {{mqttConnected ? 'conn-btn--ghost' : ''}}" size="mini"
+        bindtap="onConnBtnTap">
+        {{mqttConnected ? '断开' : (connecting ? '连接中' : (mqttTopic ? '重连' : '配置'))}}
+      </button>
+    </view>
   </view>
 
   <!-- 控制模式切换 -->

@@ -178,7 +178,7 @@ Page({
       topics: [mqttTopic.trim()],
       clientIdPrefix: 'wx_sensor_',
 
-      onState: (state, info) => this.handleClientState(state, info),
+      onState: (state) => this.handleClientState(state),
       onSubscribed: () => {
         // 订阅成功才算"连接过", 此时才写入历史记录
         this.saveHistory({
@@ -195,31 +195,46 @@ Page({
   },
 
   // 将客户端生命周期状态映射到页面 UI
-  handleClientState(state, info) {
+  handleClientState(state) {
     if (state === 'connecting') {
       this.setData({ connecting: true })
     } else if (state === 'connected') {
       this.setData({ mqttConnected: true, connecting: false })
-    } else if (state === 'reconnecting') {
-      this.setData({ mqttConnected: false, connecting: false })
-      wx.showToast({ title: `${info.reason},${info.delay / 1000}s后自动重连`, icon: 'none' })
-    } else if (state === 'failed') {
-      this.setData({ mqttConnected: false, connecting: false })
-      wx.showModal({
-        title: '连接失败',
-        content: `${info.reason}。\n\n请检查:\n1. EMQX服务器是否在运行\n2. 手机与服务器是否同一局域网\n3. 上位机是否在发布数据`,
-        showCancel: false
-      })
-    } else if (state === 'closed') {
+    } else if (state === 'failed' || state === 'closed') {
+      // 不自动重连, 也不再弹失败/重连提示; 用户点"重连"手动发起
       this.setData({ mqttConnected: false, connecting: false })
     }
   },
 
-  // 用户手动断开(不触发自动重连)
+  // 用户手动断开
   disconnectMqtt() {
     if (this._client) this._client.disconnect()
     this.setData({ mqttConnected: false, connecting: false })
     wx.showToast({ title: '已断开连接', icon: 'none' })
+  },
+
+  // 连接按钮: 已连接=断开, 未连接=用已保存配置手动重连, 无配置=打开配置
+  onConnBtnTap() {
+    if (this.data.connecting) return
+    if (this.data.mqttConnected) {
+      this.disconnectMqtt()
+      return
+    }
+    if (this.data.mqttTopic.trim()) {
+      this.reconnectMqtt()
+      return
+    }
+    this.showMqttConfig()
+  },
+
+  // 手动重连: 使用当前已保存的服务器配置, 不自动重试
+  reconnectMqtt() {
+    const { mqttHost, mqttPort, mqttTopic } = this.data
+    if (!mqttHost.trim() || !mqttPort.trim() || !mqttTopic.trim()) {
+      this.showMqttConfig()
+      return
+    }
+    this.connectMqtt()
   },
 
   /* ==================== 数据处理 ==================== */

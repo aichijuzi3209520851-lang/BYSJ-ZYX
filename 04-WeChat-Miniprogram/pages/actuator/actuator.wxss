@@ -65,9 +65,27 @@
   line-height: 1;
 }
 
+.conn-actions {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+  gap: 12rpx;
+  margin-left: 16rpx;
+}
+
+.conn-actions .conn-btn {
+  margin: 0;
+}
+
+.conn-btn--config {
+  background-color: rgba(255, 255, 255, 0.50);
+  color: var(--ink-secondary);
+  border: 1rpx solid var(--border-hair);
+}
+
 .conn-btn--ghost {
   background-color: rgba(255, 255, 255, 0.5);
-  color: var(--alarm);
+  color: var(--alarm-ink);
   border: 1rpx solid var(--alarm-line);
 }
 
@@ -144,10 +162,15 @@
   transition: border-color 0.3s ease;
 }
 
-/* 开启态: 翡翠绿 tint 玻璃, 状态一眼可见(P15) */
-.device--on.device--on {
+/* 同级别设备卡统一为翡翠绿 tint 玻璃; 开启态再加深一档 */
+.device.device {
   background-color: rgba(20, 135, 92, 0.13);
-  border-color: rgba(20, 135, 92, 0.18);
+  border-color: rgba(20, 135, 92, 0.16);
+}
+
+.device--on.device--on {
+  background-color: rgba(20, 135, 92, 0.18);
+  border-color: rgba(20, 135, 92, 0.22);
 }
 
 .device-icon-wrap {
@@ -330,18 +353,23 @@
 }
 
 .field-label {
-  font-size: 30rpx;
-  font-weight: 500;
-  color: var(--ink-secondary);
+  font-size: 32rpx;
+  font-weight: 600;
+  color: var(--ink-primary);
   margin-bottom: 12rpx;
 }
 
 .field-input {
+  box-sizing: border-box;
+  width: 100%;
   min-height: 88rpx;
   padding: 0 24rpx;
-  background-color: rgba(255, 255, 255, 0.72);
-  border: 1rpx solid var(--border-hair);
+  background-color: rgba(255, 255, 255, 0.66);
+  border: 1rpx solid rgba(255, 255, 255, 0.78);
   border-radius: var(--radius-inner);
+  box-shadow:
+    inset 0 1rpx 0 rgba(255, 255, 255, 0.90),
+    0 2rpx 8rpx rgba(4, 18, 12, 0.05);
   font-size: 32rpx;
   color: var(--ink-primary);
 }
@@ -381,9 +409,10 @@
   justify-content: space-between;
   padding: 18rpx 24rpx;
   margin-bottom: 12rpx;
-  background-color: rgba(255, 255, 255, 0.6);
-  border: 1rpx solid var(--border-hair);
+  background-color: rgba(255, 255, 255, 0.66);
+  border: 1rpx solid rgba(255, 255, 255, 0.72);
   border-radius: var(--radius-inner);
+  box-shadow: inset 0 1rpx 0 rgba(255, 255, 255, 0.88);
 }
 
 .history-info {

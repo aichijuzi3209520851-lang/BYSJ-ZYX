@@ -30,16 +30,6 @@
     </view>
   </view>
 
-  <!-- 开发者署名(深绿名片, 视觉锚点) -->
-  <view class="author">
-    <image class="author-avatar" src="/ICON/周颖暄.jpg" mode="aspectFill" />
-    <view class="author-body">
-      <text class="author-name">周颖暄</text>
-      <text class="author-role">毕业设计 · 物联网方向</text>
-    </view>
-    <text class="author-tag">作者</text>
-  </view>
-
   <!-- 双入口: 环境数据 / 设备控制 -->
   <view class="entry-grid">
     <view class="entry entry--data" hover-class="entry--hover" bindtap="goToSensor">
@@ -61,6 +51,16 @@
         <text class="entry-meta">天窗 · 风扇</text>
       </view>
     </view>
+  </view>
+
+  <!-- 开发者署名: 置于双入口下方, 不抢功能入口 -->
+  <view class="author">
+    <image class="author-avatar" src="/ICON/周颖暄.jpg" mode="aspectFill" />
+    <view class="author-body">
+      <text class="author-name">周颖暄</text>
+      <text class="author-role">毕业设计 · 物联网方向</text>
+    </view>
+    <text class="author-tag">作者</text>
   </view>
 
   <!-- 退出登录: 低调文字入口, 不抢双入口的视觉重心 -->

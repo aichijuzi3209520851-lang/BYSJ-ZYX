@@ -8,13 +8,10 @@
     <view class="login-bg-glow"></view>
   </view>
 
-  <!-- 顶部: 品牌行 + 标题 -->
+  <!-- 顶部: 品牌主标题 + 副标题 -->
   <view class="login-head">
-    <view class="login-eyebrow">
-      <view class="login-eyebrow-bar"></view>
-      <text class="login-eyebrow-text">智能温室大棚监测</text>
-    </view>
-    <text class="login-title">登入</text>
+    <view class="login-brand-bar"></view>
+    <text class="login-brand">智能温室大棚监测系统</text>
     <text class="login-sub">环境数据与设备控制的统一入口</text>
   </view>
 
@@ -23,7 +20,8 @@
 
     <view class="login-card lg-panel">
 
-      <text class="login-card-lead">登入后即可查看实时环境数据与设备状态</text>
+      <text class="login-card-title">账号登入</text>
+      <text class="login-card-lead">查看实时环境数据与设备状态</text>
 
       <view class="field">
         <text class="field-label">账号</text>

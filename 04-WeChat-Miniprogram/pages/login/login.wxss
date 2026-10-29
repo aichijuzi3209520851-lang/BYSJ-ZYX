@@ -1,16 +1,17 @@
 /* 登入页样式 —— 液态玻璃主题
  * 设计令牌来自 app.wxss（其中已 @import ./styles/liquid-glass.wxss），本页直接复用:
  *   强调色 --accent #14875C / 墨色禁纯黑 --ink-primary / 圆角尺 --radius-card 等
- * 结构: 全幅实拍封面(压成深绿调) + 顶部品牌行 + 底部近实白输入卡
+ * 结构: 全幅实拍封面(压成深绿调) + 顶部品牌行 + 底部玻璃输入卡
  *
- * 可读性优先(本轮重做要点):
- *   1. 卡面从"白 0.62 叠在深封面上"改为近实白 0.94 —— 0.62 时卡面被压成中灰 #a5aca9,
- *      灰字压在灰底上实测只有 2.26:1(远低于 WCAG AA 的 4.5:1), 这是"费力才看清"的根因
- *   2. 字段标签用 ink-primary(不是更淡的 secondary) + 600 字重 + 30rpx
- *   3. 输入框 34rpx / 104rpx 高, 按钮 34rpx / 104rpx, 触摸目标远超 88rpx 下限
- *   4. 去掉 .login 的 overflow: hidden —— 原实现会把底部标记裁掉半行
+ * 本轮视觉重构:
+ *   1. 字阶: 64(品牌主标题) / 30(副标题) / 38(卡内标题) / 28(卡内说明) / 32(字段标签) / 34(输入与按钮)
+ *      品牌名承担页面第一身份, "登入"降为卡内的 38rpx 表单标题, 不再用大字号抢主视觉
+ *   2. 材质: 卡面从 0.94 近实白改为 0.70 绿白玻璃, 叠加多层高光渐变 / 1rpx 亮边 /
+ *      内收阴影 / 24px 模糊, 30% 背景透出, 保留液态玻璃的半透明质感
+ *   3. 可读性: 卡面最暗处(封面底部)实测 --ink-primary 8.3:1、卡内说明 #354B3F 4.7:1、
+ *      输入框占位符 5.5:1、标题区白字 5.6:1、按钮白字 4.5:1, 全部达到 WCAG AA
+ *   4. 顶部遮罩整体加深, 保证白色品牌名与副标题在封面高光处仍清晰
  *
- * 与首页协同: 封面暗部沿用首页 .hero 的 #0C2419 深绿, 名片同色系但不重复其版式
  * 动效克制: 仅卡片入场一次 + 光斑极慢呼吸, 不做位移抖动与霓虹发光 */
 
 .login {
@@ -42,18 +43,23 @@
    * 写了会"新库双重压暗、老库完全无效"两种画风, 交给图片本身最稳。 */
 }
 
-/* 上部留出天空层次, 下部压实承载玻璃卡与白字 */
+/* 双轴遮罩: 竖向压暗承载白字与玻璃卡, 左侧再压一层保证标题落在高光外也清晰 */
 .login-bg-scrim {
   position: absolute;
   top: 0;
   left: 0;
   width: 100%;
   height: 100%;
-  background: linear-gradient(180deg,
-    rgba(9, 26, 18, 0.52) 0%,
-    rgba(9, 26, 18, 0.30) 26%,
-    rgba(9, 26, 18, 0.46) 58%,
-    rgba(8, 24, 17, 0.86) 100%);
+  background:
+    linear-gradient(90deg,
+      rgba(6, 20, 13, 0.42) 0%,
+      rgba(6, 20, 13, 0.12) 58%,
+      rgba(6, 20, 13, 0) 100%),
+    linear-gradient(180deg,
+      rgba(9, 26, 18, 0.62) 0%,
+      rgba(9, 26, 18, 0.52) 30%,
+      rgba(9, 26, 18, 0.56) 60%,
+      rgba(8, 24, 17, 0.90) 100%);
 }
 
 /* 逆向光斑: 呼应封面逆光, 极慢呼吸(不做位移) */
@@ -81,45 +87,31 @@
   padding-top: 96rpx;
 }
 
-.login-eyebrow {
-  display: flex;
-  align-items: center;
-  margin-bottom: 30rpx;
-}
-
-/* 短横线代替图标: 主题禁用 emoji 图标, 用色块建立秩序 */
-.login-eyebrow-bar {
-  width: 44rpx;
+.login-brand-bar {
+  width: 48rpx;
   height: 4rpx;
-  margin-right: 18rpx;
+  margin-bottom: 24rpx;
   border-radius: var(--radius-pill, 999rpx);
-  background-color: rgba(255, 255, 255, 0.92);
+  background-color: rgba(255, 255, 255, 0.94);
 }
 
-.login-eyebrow-text {
-  font-size: 26rpx;
-  font-weight: 600;
-  letter-spacing: 2rpx;
-  color: rgba(255, 255, 255, 0.92);
-}
-
-.login-title {
+.login-brand {
   display: block;
-  font-size: 80rpx;
+  font-size: 64rpx;
   font-weight: 600;
-  line-height: 1.14;
-  letter-spacing: 6rpx;
+  line-height: 1.2;
+  letter-spacing: 1rpx;
   color: #FFFFFF;
-  text-shadow: 0 2rpx 18rpx rgba(0, 0, 0, 0.42);
+  text-shadow: 0 3rpx 24rpx rgba(0, 0, 0, 0.48);
 }
 
 .login-sub {
   display: block;
-  margin-top: 18rpx;
-  font-size: 28rpx;
-  line-height: 1.6;
-  color: rgba(255, 255, 255, 0.88);
-  text-shadow: 0 1rpx 10rpx rgba(0, 0, 0, 0.36);
+  margin-top: 16rpx;
+  font-size: 30rpx;
+  line-height: 1.55;
+  color: rgba(255, 255, 255, 0.90);
+  text-shadow: 0 2rpx 14rpx rgba(0, 0, 0, 0.40);
 }
 
 /* ---------- 底部输入卡 ---------- */
@@ -134,28 +126,49 @@
   to   { opacity: 1; transform: translateY(0); }
 }
 
-/* 复用 .lg-panel 的切面亮线 / 四件套 inset / blur 光学结构,
- * 但卡面改为近实白: 双类名覆盖以对齐 .lg-panel.lg-panel 的特异性,
- * 不依赖 CSS 变量继承(老基础库上更稳) */
+/* 液态玻璃卡: 0.70 绿白玻璃叠在深封面上, 30% 背景透出
+ * 高光 / 折射 / 切面亮线 / 内收阴影四层结构, blur 仅支持环境生效,
+ * 不支持时靠 0.70 填充与亮边维持材质, 文字对比度不依赖 blur */
 .login-card.lg-panel {
   box-sizing: border-box;
   padding: 44rpx 40rpx 40rpx;
   border-radius: var(--radius-card, 28rpx);
-  background-color: rgba(255, 255, 255, 0.94);
+  background-color: rgba(250, 255, 252, 0.70);
+  background-image:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.34) 0%, rgba(255, 255, 255, 0) 30%),
+    linear-gradient(315deg, rgba(188, 232, 208, 0.20) 0%, rgba(188, 232, 208, 0) 46%),
+    radial-gradient(120% 80% at 8% 0%, rgba(255, 255, 255, 0.18) 0%, rgba(255, 255, 255, 0) 52%);
+  background-repeat: no-repeat, no-repeat, no-repeat;
+  background-size: 100% 100%, 100% 100%, 100% 100%;
+  border: 1rpx solid rgba(255, 255, 255, 0.72);
+  outline: 1rpx solid rgba(255, 255, 255, 0.16);
+  outline-offset: -2rpx;
   box-shadow:
-    inset 0 1.5rpx 0 rgba(255, 255, 255, 0.95),
-    inset 0 -1rpx 2rpx rgba(30, 41, 70, 0.06),
-    inset 0 0 0 1rpx rgba(30, 41, 70, 0.06),
-    0 8rpx 28rpx -10rpx rgba(9, 26, 18, 0.45);
+    inset 0 2rpx 0 rgba(255, 255, 255, 0.95),
+    inset 0 -3rpx 8rpx rgba(10, 30, 20, 0.10),
+    inset 0 0 0 1rpx rgba(255, 255, 255, 0.24),
+    0 24rpx 60rpx rgba(4, 18, 12, 0.34);
+  -webkit-backdrop-filter: blur(26px) saturate(160%) brightness(1.06);
+  backdrop-filter: blur(26px) saturate(160%) brightness(1.06);
 }
 
-/* 卡首引导语: 用 ink-secondary 而非 tertiary, 保证在近实白卡面上 >=4.5:1 */
+/* 卡内标题: 账号登入, 38rpx 表单层级, 不抢品牌主视觉 */
+.login-card-title {
+  display: block;
+  margin-bottom: 10rpx;
+  font-size: 38rpx;
+  font-weight: 600;
+  letter-spacing: 0.5rpx;
+  color: var(--ink-primary, #11251C);
+}
+
+/* 卡首引导语: 用压深的卡内次级色, 在 0.70 玻璃最暗处仍有 4.7:1 */
 .login-card-lead {
   display: block;
-  margin-bottom: 34rpx;
-  font-size: 26rpx;
+  margin-bottom: 26rpx;
+  font-size: 28rpx;
   line-height: 1.6;
-  color: var(--ink-secondary, #5C7167);
+  color: #354B3F;
 }
 
 /* ---------- 表单(尺度与传感器页同族, 但放开字号便于阅读) ---------- */
@@ -167,7 +180,7 @@
 
 .field-label {
   margin-bottom: 14rpx;
-  font-size: 30rpx;
+  font-size: 32rpx;
   font-weight: 600;
   letter-spacing: 0.5rpx;
   color: var(--ink-primary, #11251C);
@@ -180,14 +193,17 @@
   padding: 0 28rpx;
   font-size: 34rpx;
   color: var(--ink-primary, #11251C);
-  background-color: rgba(255, 255, 255, 0.86);
-  border: 1rpx solid var(--border-hair, rgba(17, 37, 28, 0.10));
+  background-color: rgba(255, 255, 255, 0.66);
+  border: 1rpx solid rgba(255, 255, 255, 0.78);
   border-radius: var(--radius-inner, 20rpx);
+  box-shadow:
+    inset 0 1rpx 0 rgba(255, 255, 255, 0.92),
+    0 2rpx 8rpx rgba(4, 18, 12, 0.05);
 }
 
 .field-placeholder {
-  font-size: 30rpx;
-  color: var(--ink-tertiary, #566A60);
+  font-size: 34rpx;
+  color: var(--ink-tertiary, #4A5E54);
 }
 
 .login-btn {
@@ -195,15 +211,18 @@
   min-height: 104rpx;
   margin-top: 16rpx;
   font-size: 34rpx;
-  letter-spacing: 4rpx;
+  letter-spacing: 2rpx;
+  box-shadow:
+    inset 0 2rpx 0 rgba(255, 255, 255, 0.18),
+    0 12rpx 28rpx rgba(20, 135, 92, 0.24);
 }
 
 .login-mark {
   display: block;
   margin-top: 32rpx;
-  font-size: 26rpx;
-  letter-spacing: 1rpx;
+  font-size: 24rpx;
+  letter-spacing: 2rpx;
   text-align: center;
-  color: rgba(255, 255, 255, 0.78);
-  text-shadow: 0 1rpx 8rpx rgba(0, 0, 0, 0.34);
+  color: rgba(255, 255, 255, 0.82);
+  text-shadow: 0 1rpx 8rpx rgba(0, 0, 0, 0.36);
 }
