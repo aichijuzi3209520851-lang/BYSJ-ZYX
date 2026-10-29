@@ -68,7 +68,7 @@ PC 上位机通过串口解析后经 MQTT 上云，微信小程序订阅数据�
   | 光照强度 | — | **仅采集展示，不联动**（与固件 `Light.h` 约定一致） |
 
 - **稳定的小程序 MQTT 接入**：keep-alive 60s + 30s PINGREQ 心跳 + 指数退避自动重连 + DISCONNECT 优雅退出
-- **小程序登入页**：全幅温室实拍封面 + 近实白玻璃表单卡，与首页同一套设计令牌；登录态本地持久化，三页 `onShow` 守卫
+- **小程序登入页**：全幅温室实拍封面（Unsplash License 实拍，调色烘焙进图片，不依赖 CSS filter）+ 近实白玻璃表单卡，与首页同一套设计令牌；登录态本地持久化，三页 `onShow` 守卫
 - **小程序温室主题轮播首页**：4 张 Pexels 免费商用实拍图（大棚纵览/番茄/草莓/LED 垂直农场）自动轮播 + 胶囊指示点
 - **调试台完整落盘**：界面日志框只留最近 500 行，完整会话日志始终写入 `%APPDATA%\IotLinkLab\logs\`；一键查看 / 另存为
 - **调试台数据导出**：上行帧 / 下行指令 / 订阅消息统一记录，导出 UTF-8 带 BOM 的 CSV（Excel 直接打开不乱码，一条记录一行）
@@ -161,6 +161,10 @@ Visual Studio 2019+ 打开 `02-PC-UpperComputer/DHT11.csproj`（NuGet 会自动�
 **小程序已新增登入页**（全幅温室实拍封面 + 玻璃表单卡，风格与首页一致），启动即进入登入页；
 账号 `zyx` / 密码 `zyx`。登录态存于本地 storage，三个 tab 页在 `onShow` 时自检，未登录会 `reLaunch` 回登入页；
 首页底部提供「退出登录」入口。
+
+> 封面图 `images/login-cover.jpg`（750×1624，197 KB）取自 [Unsplash](https://unsplash.com/photos/plants-inside-greenhouse-igULa1x0zkA)，
+> 遵循 Unsplash License（可免费商用、无需署名）。降饱和、暗部染品牌绿、竖向压暗三条调色已烘焙进 JPEG 本身。
+> 微信 `<image>` 组件对 CSS `filter` 的支持随基础库浮动，写在 WXSS 里会造成「新库双重压暗、老库完全无效」两种画风。
 
 登录后：传感器页 → 配置 → 填入 EMQX 主机 IP、WebSocket 端口 `8083`、订阅主题 `green/data` → 保存并连接。
 连接过的配置会自动存入历史，下次一键回填。

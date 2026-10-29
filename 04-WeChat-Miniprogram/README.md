@@ -25,35 +25,40 @@ STM32 智能温室物联网系统的**移动端**：通过 MQTT over WebSocket �
 
 ## 界面截图
 
-| 首页 | 传感器（正常） | 传感器（报警） |
+| 登入页 | 首页 | 传感器（正常） |
 | --- | --- | --- |
-| ![首页](./screenshots/home.jpg) | ![传感器](./screenshots/sensor.jpg) | ![报警](./screenshots/sensor-alarm.jpg) |
+| ![登入](./screenshots/login.jpg) | ![首页](./screenshots/home.jpg) | ![传感器](./screenshots/sensor.jpg) |
 
-| 执行器（手动·开窗） | 服务器配置弹窗 |
-| --- | --- |
-| ![执行器](./screenshots/actuator.jpg) | ![配置](./screenshots/config-modal.jpg) |
+| 传感器（报警） | 执行器（手动·开窗） | 服务器配置弹窗 |
+| --- | --- | --- |
+| ![报警](./screenshots/sensor-alarm.jpg) | ![执行器](./screenshots/actuator.jpg) | ![配置](./screenshots/config-modal.jpg) |
+
+> 登入页图为 WXSS/WXML 静态还原（`rpx → px`、1rpx = 0.5px、750×1624 出图后缩至 377×813）。
+> 本机未安装微信开发者工具，无法出模拟器/真机截图；该还原只校验版式、对比度与留白，不替代真机验收。
 
 ## 目录结构
 
 ```
 ├── app.js               # 全局配置: 默认服务器 192.168.36.221:8083, 订阅主题默认留空
-├── app.json             # 页面与 tabBar(首页/传感器/执行器), 浅色导航栏
+├── app.json             # 页面与 tabBar(首页/传感器/执行器), pages[0] = pages/login/login, 浅色导航栏
 ├── app.wxss             # 全局设计令牌 + 页面环境光层(照片/纱罩/光斑) + 玻璃派生令牌
 ├── styles/
 │   └── liquid-glass.wxss  # 液态玻璃材质层: 面板/接管层(@supports or)/strong 档/tint 变体
 ├── utils/
+│   ├── auth.js          # 登录态: login_state 读写 + guardLogin() 守卫(未登录 reLaunch 回登入页)
 │   └── mqtt.js          # 共享 MQTT 3.1.1 客户端: 传感器页与执行器页共用(订阅+发布)
 ├── pages/
-│   ├── home/            # 首页: 3图轮播Hero / 作者名片 / 双入口玻璃卡
+│   ├── login/           # 登入页(启动首页): 全幅温室封面 + 玻璃表单卡
+│   ├── home/            # 首页: 3图轮播Hero / 作者名片 / 双入口玻璃卡 / 退出登录
 │   ├── sensor/          # 传感器页: 连接状态栏 / 报警横幅 / 四张玻璃数据卡+空气质量宽卡 / 配置弹窗
 │   └── actuator/        # 执行器页: 模式分段控件 / 天窗·风扇玻璃卡 / 最近指令 / 配置弹窗
-├── ICON/ images/        # 图标资源(报警/正常/开关双状态) + hero-*.jpg 轮播图 + bg-*.jpg 页面背景
+├── ICON/ images/        # 图标资源(报警/正常/开关双状态) + hero-*.jpg 轮播图 + bg-*.jpg + login-cover.jpg
 ├── screenshots/         # 界面截图(README 引用)
 ├── MQTT连接故障排查.md   # EMQX/防火墙/域名校验排障指南
 └── 真机调试MQTT连接指南.md # 真机调试网络配置指南(配套 检查网络配置.bat)
 ```
 
-## 图片素材来源（Pexels 免费商用）
+## 图片素材来源（均为免费商用图库）
 
 | 文件 | 内容 | 来源 |
 | --- | --- | --- |
@@ -61,6 +66,11 @@ STM32 智能温室物联网系统的**移动端**：通过 MQTT over WebSocket �
 | `images/bg-sensor.jpg` | 阳光下的绿叶光斑 | [Pexels #12623891](https://www.pexels.com/photo/12623891/) |
 | `images/bg-actuator.jpg` | 玻璃穹顶温室 | [Pexels #17720178](https://www.pexels.com/photo/17720178/) |
 | `images/hero-*.jpg`（3 张） | 温室实拍轮播 | Pexels 免费图库 |
+| `images/login-cover.jpg` | 温室通道实拍（登入页封面） | [Unsplash](https://unsplash.com/photos/plants-inside-greenhouse-igULa1x0zkA)（Unsplash License，可商用免署名） |
+
+> `login-cover.jpg` 由原片按 750×1624 居中裁切后做三步调色，**调色结果直接烘焙进 JPEG**：
+> 降饱和至 0.78（退到品牌绿族）、暗部向 `#0C2419` 染色（与首页 `.hero` 深绿同族）、竖向压暗曲线（顶部 0.10 → 底部 0.52，承托白字与玻璃卡）。
+> 之所以不写在 WXSS 里：微信 `<image>` 组件对 CSS `filter` 的支持随基础库浮动，写 `filter` 会得到「新库双重压暗、老库完全无效」两种画风。
 
 ## 快速上手
 
