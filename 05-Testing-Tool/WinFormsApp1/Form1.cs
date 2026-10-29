@@ -31,8 +31,13 @@ namespace IotLinkLab
         public Form1()
         {
             Text = "物联网链路调试台 · IoT Link Lab v1.0";
-            MinimumSize = new Size(1180, 800);
-            Size = new Size(1360, 880);
+            // 尺寸按屏幕可用区域收敛: 高分屏 150% 缩放下逻辑分辨率只有 ~1280x720,
+            // 写死 1360x880 会超出屏幕被系统裁剪, 造成内容"看起来"重叠/截断。
+            Rectangle wa = Screen.PrimaryScreen?.WorkingArea ?? new Rectangle(0, 0, 1280, 720);
+            int w = Math.Min(1360, wa.Width - 24);
+            int h = Math.Min(880, wa.Height - 24);
+            MinimumSize = new Size(Math.Min(1040, wa.Width - 24), Math.Min(600, wa.Height - 24));
+            Size = new Size(w, h);
             StartPosition = FormStartPosition.CenterScreen;
             BackColor = Theme.PageBg;
             DoubleBuffered = true;
@@ -41,6 +46,19 @@ namespace IotLinkLab
             BuildUi();
             WireEvents();
             LoadSettings();
+
+            // 快捷键: F5 连接 / F6 断开(便于演示与自动化验证)
+            KeyPreview = true;
+            KeyDown += async (s, e) =>
+            {
+                if (e.KeyCode == Keys.F5 && _btnConnect.Enabled) { e.Handled = true; await ConnectAsync(); }
+                else if (e.KeyCode == Keys.F6 && _btnDisconnect.Enabled)
+                {
+                    e.Handled = true;
+                    await _link.DisconnectAsync();
+                    SaveSettings();
+                }
+            };
             Shown += (s, e) => Log("物联网链路调试台就绪。内置协议预设: STM32-Greenhouse(固件 V1.2 契约) + 自定义模板。", Theme.TextSecondary);
         }
 

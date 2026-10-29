@@ -20,6 +20,7 @@ namespace IotLinkLab
         private CheckBox _chkSerial = null!;
         private ComboBox _comPort = null!, _comBaud = null!;
         private SerialPort? _serial;
+        private Label _stateServo = null!, _stateMotor = null!, _stateMode = null!;   // 模拟设备实时状态
 
         private System.Windows.Forms.Timer _timer = null!;
         private readonly Random _rnd = new();
@@ -52,63 +53,109 @@ namespace IotLinkLab
             DoubleBuffered = true;
 
             var root = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2, RowCount = 1, BackColor = Color.Transparent };
-            root.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 46f));
-            root.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 54f));
+            root.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 44f));
+            root.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 56f));
 
-            // ---------- 左列: 参数与发送 ----------
+            // ---------- 左列: 双栏(参数 | 发送与控制), 矮屏也无需滚动 ----------
             var left = new Card { Dock = DockStyle.Fill, Padding = new Padding(Theme.Pad) };
-            var leftFlow = new FlowLayoutPanel { Dock = DockStyle.Fill, FlowDirection = FlowDirection.TopDown, WrapContents = false, AutoScroll = true, BackColor = Color.Transparent };
+            var leftGrid = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2, RowCount = 2, BackColor = Color.Transparent };
+            leftGrid.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 52f));
+            leftGrid.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 48f));
+            leftGrid.RowStyles.Add(new RowStyle(SizeType.Percent, 100f));   // 双栏区
+            leftGrid.RowStyles.Add(new RowStyle(SizeType.AutoSize));        // 整宽状态条
 
-            leftFlow.Controls.Add(MakeSection("场景预设"));
-            _sceneCombo = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Width = 300, Font = Theme.Ui(9.5F), ItemHeight = 22 };
+            // === 左栏 A: 场景与数值 ===
+            var colA = new FlowLayoutPanel { Dock = DockStyle.Fill, FlowDirection = FlowDirection.TopDown, WrapContents = false, BackColor = Color.Transparent, Margin = new Padding(0, 0, 10, 0) };
+
+            colA.Controls.Add(MakeSection("场景预设"));
+            _sceneCombo = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Width = 232, Font = Theme.Ui(9.5F), ItemHeight = 22, Margin = new Padding(0, 0, 0, 2) };
             foreach (var (key, _, _, _, _, _, _) in FrameCodec.Scenes) _sceneCombo.Items.Add(key);
             _sceneCombo.SelectedIndexChanged += (s, e) => ApplyScene(Math.Max(0, _sceneCombo.SelectedIndex));
-            leftFlow.Controls.Add(_sceneCombo);
+            colA.Controls.Add(_sceneCombo);
 
-            leftFlow.Controls.Add(MakeSection("基础数值(场景选定后可微调)"));
-            // 数字网格: 3 列 × 2 行, 标签与控件同行横排 —— 纵向高度砍半, 左列无需滚动
-            var grid = new TableLayoutPanel { AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, ColumnCount = 3, RowCount = 2, BackColor = Color.Transparent, Margin = new Padding(0, 2, 0, 2) };
-            for (int i = 0; i < 3; i++) grid.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
-            grid.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-            grid.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+            colA.Controls.Add(MakeSection("基础数值"));
+            // 2 列 × 3 行(窄栏适配): 标签与微调控件同行横排
+            var grid = new TableLayoutPanel { AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, ColumnCount = 2, RowCount = 3, BackColor = Color.Transparent, Margin = new Padding(0, 2, 0, 2) };
+            for (int i = 0; i < 2; i++) grid.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+            for (int i = 0; i < 3; i++) grid.RowStyles.Add(new RowStyle(SizeType.AutoSize));
             (_numTemp, _) = MakeNum("温度°C", 0, 100, 24, grid, 0, 0);
-            (_numHumi, _) = MakeNum("湿度%RH", 0, 100, 62, grid, 1, 0);
-            (_numSoil, _) = MakeNum("土壤%", 0, 100, 35, grid, 2, 0);
-            (_numLight, _) = MakeNum("光照%", 0, 100, 72, grid, 0, 1);
-            (_numRaw, _) = MakeNum("raw值", 0, 4095, 2080, grid, 1, 1);
-            leftFlow.Controls.Add(grid);
+            (_numHumi, _) = MakeNum("湿度%", 0, 100, 62, grid, 1, 0);
+            (_numSoil, _) = MakeNum("土壤%", 0, 100, 35, grid, 0, 1);
+            (_numLight, _) = MakeNum("光照%", 0, 100, 72, grid, 1, 1);
+            (_numRaw, _) = MakeNum("raw", 0, 4095, 2080, grid, 0, 2);
+            _numRaw.Width = 68;   // 4 位数 + 上下箭头需更宽, 否则 2080 显示成 208
+            colA.Controls.Add(grid);
 
-            leftFlow.Controls.Add(MakeSection("发送控制"));
-            var sendRow = new FlowLayoutPanel { AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, BackColor = Color.Transparent, Margin = new Padding(0, 2, 0, 0) };
-            sendRow.Controls.Add(new Label { Text = "周期", AutoSize = true, Font = Theme.Ui(9F), Margin = new Padding(3, 8, 4, 0) });
-            _numInterval = new NumericUpDown { Minimum = 1, Maximum = 60, Value = 1.5m, Increment = 0.5m, Width = 62, DecimalPlaces = 1, Font = Theme.Ui(9F) };
+            // === 左栏 B: 发送控制与串口 ===
+            var colB = new FlowLayoutPanel { Dock = DockStyle.Fill, FlowDirection = FlowDirection.TopDown, WrapContents = false, BackColor = Color.Transparent, Margin = new Padding(10, 0, 0, 0) };
+
+            colB.Controls.Add(MakeSection("发送控制"));
+            var sendRow = new FlowLayoutPanel { AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, WrapContents = false, BackColor = Color.Transparent, Margin = new Padding(0, 0, 0, 2) };
+            sendRow.Controls.Add(new Label { Text = "周期", AutoSize = true, Font = Theme.Ui(9F), Margin = new Padding(0, 7, 4, 0) });
+            _numInterval = new NumericUpDown { Minimum = 1, Maximum = 60, Value = 1.5m, Increment = 0.5m, Width = 62, DecimalPlaces = 1, Font = Theme.Ui(9F), Margin = new Padding(0, 4, 2, 0) };
             sendRow.Controls.Add(_numInterval);
-            sendRow.Controls.Add(new Label { Text = "s", AutoSize = true, Font = Theme.Ui(9F), Margin = new Padding(0, 8, 10, 0) });
-            _chkJitter = new CheckBox { Text = "数值抖动", AutoSize = true, Font = Theme.Ui(9F), Checked = false, Margin = new Padding(0, 8, 8, 0) };
+            sendRow.Controls.Add(new Label { Text = "秒", AutoSize = true, Font = Theme.Ui(9F), Margin = new Padding(0, 7, 10, 0) });
+            _chkJitter = new CheckBox { Text = "数值抖动", AutoSize = true, Font = Theme.Ui(9F), Checked = false, Margin = new Padding(0, 6, 4, 0) };
             sendRow.Controls.Add(_chkJitter);
-            _numJitter = new NumericUpDown { Minimum = 0, Maximum = 20, Value = 2, Width = 48, Font = Theme.Ui(9F) };
-            sendRow.Controls.Add(_numJitter);
-            leftFlow.Controls.Add(sendRow);
+            colB.Controls.Add(sendRow);
 
-            var btnRow = new FlowLayoutPanel { AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, BackColor = Color.Transparent, Margin = new Padding(0, 2, 0, 0) };
-            _btnOnce = new RoundedButton { Text = "手动发一帧", Width = 110, FillColor = Theme.Teal };
+            var jitterRow = new FlowLayoutPanel { AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, WrapContents = false, BackColor = Color.Transparent, Margin = new Padding(0, 0, 0, 2) };
+            jitterRow.Controls.Add(new Label { Text = "抖动幅度 ±", AutoSize = true, Font = Theme.Ui(8.5F), ForeColor = Theme.TextSecondary, Margin = new Padding(0, 8, 4, 0) });
+            _numJitter = new NumericUpDown { Minimum = 0, Maximum = 20, Value = 2, Width = 54, Font = Theme.Ui(9F), Margin = new Padding(0, 4, 0, 0) };
+            jitterRow.Controls.Add(_numJitter);
+            colB.Controls.Add(jitterRow);
+
+            var btnRow = new FlowLayoutPanel { AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, WrapContents = false, BackColor = Color.Transparent, Margin = new Padding(0, 4, 0, 0) };
+            _btnOnce = new RoundedButton { Text = "手动发一帧", Width = 108, FillColor = Theme.Teal, Margin = new Padding(0, 0, 6, 0) };
             _btnOnce.Click += (s, e) => EmitFrame("手动");
-            _btnStart = new RoundedButton { Text = "开始定时发送", Width = 130, FillColor = Theme.Primary };
+            _btnStart = new RoundedButton { Text = "定时发送", Width = 108, FillColor = Theme.Primary, Margin = new Padding(0, 0, 0, 0) };
             _btnStart.Click += BtnStart_Click;
             btnRow.Controls.Add(_btnOnce); btnRow.Controls.Add(_btnStart);
-            leftFlow.Controls.Add(btnRow);
+            colB.Controls.Add(btnRow);
 
-            leftFlow.Controls.Add(MakeSection("串口输出(可选, 配合虚拟串口对)"));
-            var serRow = new FlowLayoutPanel { AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, BackColor = Color.Transparent, Margin = new Padding(0, 2, 0, 0) };
-            _chkSerial = new CheckBox { Text = "同步写串口", AutoSize = true, Font = Theme.Ui(9F), Margin = new Padding(0, 8, 8, 0) };
-            _comPort = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Width = 90, Font = Theme.Ui(9F) };
-            _comBaud = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Width = 80, Font = Theme.Ui(9F) };
+            colB.Controls.Add(MakeSection("串口输出(可选)"));
+            _chkSerial = new CheckBox { Text = "同步写串口", AutoSize = true, Font = Theme.Ui(9F), Margin = new Padding(0, 2, 0, 2) };
+            colB.Controls.Add(_chkSerial);
+            var serRow = new FlowLayoutPanel { AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, WrapContents = false, BackColor = Color.Transparent, Margin = new Padding(0, 0, 0, 0) };
+            _comPort = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Width = 96, Font = Theme.Ui(9F), Margin = new Padding(0, 0, 6, 0) };
+            _comBaud = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Width = 88, Font = Theme.Ui(9F), Margin = new Padding(0, 0, 0, 0) };
             _comBaud.Items.AddRange(new object[] { "9600", "19200", "115200" });
             _comBaud.SelectedIndex = 0;
-            serRow.Controls.Add(_chkSerial); serRow.Controls.Add(_comPort); serRow.Controls.Add(_comBaud);
-            leftFlow.Controls.Add(serRow);
+            serRow.Controls.Add(_comPort); serRow.Controls.Add(_comBaud);
+            colB.Controls.Add(serRow);
 
-            left.Controls.Add(leftFlow);
+            leftGrid.Controls.Add(colA, 0, 0);
+            leftGrid.Controls.Add(colB, 1, 0);
+
+            // 设备状态条: 跨两栏整宽, 三段状态一行排开
+            var stateWrap = new FlowLayoutPanel
+            {
+                Dock = DockStyle.Fill,
+                AutoSize = true,
+                AutoSizeMode = AutoSizeMode.GrowAndShrink,
+                WrapContents = false,
+                BackColor = Color.Transparent,
+                Margin = new Padding(0, 8, 0, 0)
+            };
+            var stateStrip = new FlowLayoutPanel
+            {
+                AutoSize = true,
+                AutoSizeMode = AutoSizeMode.GrowAndShrink,
+                WrapContents = false,
+                BackColor = Theme.FieldBg,
+                Padding = new Padding(8, 4, 8, 4),
+                Margin = new Padding(0, 0, 0, 0)
+            };
+            stateStrip.Controls.Add(new Label { Text = "设备状态", AutoSize = true, Font = Theme.Ui(8.5F), ForeColor = Theme.TextTertiary, Margin = new Padding(0, 4, 10, 0) });
+            _stateServo = MakeStateCell(stateStrip, "天窗");
+            _stateMotor = MakeStateCell(stateStrip, "风扇");
+            _stateMode = MakeStateCell(stateStrip, "模式");
+            stateWrap.Controls.Add(stateStrip);
+            leftGrid.Controls.Add(stateWrap, 0, 1);
+            leftGrid.SetColumnSpan(stateWrap, 2);
+            RefreshStateLabels();
+
+            left.Controls.Add(leftGrid);
 
             // ---------- 右列: 三层预览 ----------
             var right = new Card { Dock = DockStyle.Fill, Padding = new Padding(Theme.Pad) };
@@ -139,7 +186,7 @@ namespace IotLinkLab
         private Label MakeSection(string text) => new()
         {
             Text = text, AutoSize = true, Font = Theme.Ui(9.5F, bold: true),
-            ForeColor = Theme.TextSecondary, Margin = new Padding(0, 6, 0, 3), BackColor = Color.Transparent
+            ForeColor = Theme.TextSecondary, Margin = new Padding(0, 4, 0, 2), BackColor = Color.Transparent
         };
 
         private TextBox MakePreview(Font font) => new()
@@ -148,11 +195,40 @@ namespace IotLinkLab
             Font = font, BorderStyle = BorderStyle.FixedSingle, ScrollBars = ScrollBars.Vertical
         };
 
+        /// <summary>状态单元格(单行): 小标题 + 值, 值随下行指令刷新。</summary>
+        private static Label MakeStateCell(FlowLayoutPanel strip, string title)
+        {
+            strip.Controls.Add(new Label
+            {
+                Text = title, AutoSize = true, Font = Theme.Ui(8.5F),
+                ForeColor = Theme.TextTertiary, Margin = new Padding(0, 4, 2, 0)
+            });
+            var val = new Label
+            {
+                Text = "--", AutoSize = true, Font = Theme.Ui(9F, bold: true),
+                ForeColor = Theme.TextSecondary, Margin = new Padding(0, 3, 9, 0)
+            };
+            strip.Controls.Add(val);
+            return val;
+        }
+
+        /// <summary>刷新三段状态文字与配色(手动/自动、开/关各有专属色)。</summary>
+        private void RefreshStateLabels()
+        {
+            if (_stateServo == null) return;
+            _stateServo.Text = ServoState == "ON" ? "开180°" : "关0°";
+            _stateServo.ForeColor = ServoState == "ON" ? Theme.Primary : Theme.TextSecondary;
+            _stateMotor.Text = MotorState == "ON" ? "全速" : "停";
+            _stateMotor.ForeColor = MotorState == "ON" ? Theme.Primary : Theme.TextSecondary;
+            _stateMode.Text = ModeState == "MAN" ? "手动" : "自动";
+            _stateMode.ForeColor = ModeState == "MAN" ? Theme.Warning : Theme.Teal;
+        }
+
         private (NumericUpDown, Label) MakeNum(string label, decimal min, decimal max, decimal val, TableLayoutPanel grid, int col, int row)
         {
-            var wrap = new FlowLayoutPanel { AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, WrapContents = false, BackColor = Color.Transparent, Margin = new Padding(0, 0, 14, 4) };
-            wrap.Controls.Add(new Label { Text = label, AutoSize = true, Font = Theme.Ui(9F), ForeColor = Theme.TextSecondary, Margin = new Padding(0, 7, 5, 0) });
-            var num = new NumericUpDown { Minimum = min, Maximum = max, Value = val, Width = 72, Font = Theme.Ui(9.5F) };
+            var wrap = new FlowLayoutPanel { AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, WrapContents = false, BackColor = Color.Transparent, Margin = new Padding(0, 0, 10, 2) };
+            wrap.Controls.Add(new Label { Text = label, AutoSize = true, Font = Theme.Ui(8.5F), ForeColor = Theme.TextSecondary, Margin = new Padding(0, 8, 3, 0) });
+            var num = new NumericUpDown { Minimum = min, Maximum = max, Value = val, Width = 54, Font = Theme.Ui(9F) };
             num.ValueChanged += (s, e) => UpdatePreviews();
             wrap.Controls.Add(num);
             grid.Controls.Add(wrap, col, row);
@@ -308,6 +384,7 @@ namespace IotLinkLab
             {
                 Log?.Invoke($"固件忽略 {cmd}(自动模式下设备归报警联动管辖)");
             }
+            RefreshStateLabels();
             UpdatePreviews();
         }
 
