@@ -63,10 +63,13 @@ namespace IotLinkLab
                 BackColor = Theme.FieldBg, BorderStyle = BorderStyle.FixedSingle, Font = Theme.Mono(9F),
                 HideSelection = false
             };
-            _list.Columns.Add("时间", 90);
-            _list.Columns.Add("主题", 150);
-            _list.Columns.Add("字节", 50);
-            _list.Columns.Add("载荷预览", 620);
+            // 列宽按设备 DPI 换算: ListView 列宽不随 AutoScale 自动缩放,
+            // 150% 缩放下若不换算会把 "HH:mm:ss.fff" 截断成 "09:14:3…"
+            int Scale(int v) => (int)(v * DeviceDpi / 96.0);
+            _list.Columns.Add("时间", Scale(112));
+            _list.Columns.Add("主题", Scale(140));
+            _list.Columns.Add("长度", Scale(54));
+            _list.Columns.Add("载荷预览", Scale(560));
             _list.SelectedIndexChanged += (s, e) =>
             {
                 if (_list.SelectedItems.Count > 0)
