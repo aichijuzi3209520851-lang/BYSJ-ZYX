@@ -24,9 +24,10 @@ namespace IotLinkLab
         private Panel _statusBar = null!;
 
         private TextBox _hostBox = null!, _portBox = null!, _dataTopicBox = null!, _controlTopicBox = null!;
+        private TextBox _saveDirBox = null!;
         private ComboBox _protoCombo = null!;
         private FieldShell _hostShell = null!, _portShell = null!, _protoShell = null!;
-        private FieldShell _dataTopicShell = null!, _controlTopicShell = null!;
+        private FieldShell _dataTopicShell = null!, _controlTopicShell = null!, _saveDirShell = null!;
         private RoundedButton _btnConnect = null!, _btnDisconnect = null!, _btnSettings = null!;
         private RoundedButton _btnLog = null!, _btnHelp = null!;
         private StatusChip _chip = null!;
@@ -54,6 +55,32 @@ namespace IotLinkLab
         private bool _suppressSplitEvent;
         private bool _applyingMode;
         private bool _compact;
+        private bool _resizing;
+        // 拖拽期间挂起根布局: WM_SIZE 洪流里每帧都会让 TableLayoutPanel 同步重排整棵子树
+        // (实测 48~143ms/帧, 必然掉帧)。挂起后拖拽只做窗口位移动画, 停手时一次收敛。
+        private bool _layoutSuspendedByDrag;
+        private Size _lastClientSize = Size.Empty;
+        // 尺寸稳定后再重排: 拖拽窗口时每一帧都会触发跨档位整树重排(实测单次 ~300ms),
+        // 用防抖定时器把这次重排推迟到用户停手之后, 拖拽过程只跟手不重排。
+        private readonly System.Windows.Forms.Timer _resizeSettle = new() { Interval = 120 };
+        // 记录上次真正写入 SplitContainer 的形态, 用它做"要不要再赋一次"的判定,
+        // 避免每次 Resize 都重算并写 SplitterDistance(单次 77~1000ms)。
+        private int _appliedP2Fixed = -1;
+        private FixedPanel _appliedFixedPanel = FixedPanel.None;
+        private double _appliedRatio = -1;
+
+        /// <summary>
+        /// SplitContainer 的「够准就不动」容差(像素)。
+        /// 容器尺寸每变一次, Panel2 实际高度与目标值天然差 2~3px(SplitContainer 内部
+        /// 按像素取整 + 分隔条宽度分摊), 而修正这点差值要重建两侧子窗口(实测 107ms)。
+        /// 3px 的日志栏高度差不可见, 不值得付这个代价。
+        /// </summary>
+        private const int SplitterTolerancePx = 3;
+        // 布局档位快照: 只有档位真的翻转时才重做文字/按钮宽度重算, 平常的 Resize 全部早退
+        private bool _narrow;
+        private bool _showSubtitle = true;
+        private bool _showHelp = true;
+        private int _activeTab = -1;
 
         private string AppDataDir => Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "IotLinkLab");
@@ -65,6 +92,9 @@ namespace IotLinkLab
             _ctlTab = new ControlTab();
 
             Text = "物联网链路调试台 · IoT Link Lab v1.1";
+            // 窗口图标: 显式从 assets/app.ico 读取, 保证标题栏/任务栏图标与 exe 内嵌图标(ApplicationIcon)
+            // 以及界面左上角 app-mark.png 同源。若素材缺失则回退到 exe 自带图标。
+            Icon = LoadAppIcon();
             // 尺寸按屏幕可用区域收敛: 先把设计尺寸(96 DPI 逻辑像素)换算到当前 DPI,
             // 再与屏幕可用区域取小。150% 缩放下若直接写 1360x880, 逻辑可用区只剩 ~907x587,
             // 内容必然被挤压/裁切。
@@ -82,6 +112,12 @@ namespace IotLinkLab
             Font = Theme.Body();
 
             BuildUi();
+            // 把 Color.Transparent 换成等效实色, 这是最关键的单项性能修复(实测跨断点重排 3496ms → 505ms)。
+            // WinForms 的 Transparent 并非 alpha 合成, 而是"绘制时向父控件索要背景" ——
+            // 本界面有 4~5 层 TableLayoutPanel 嵌套 + 90 多处 Transparent, 每次重绘都要沿祖先链逐层回溯,
+            // 且让每个子控件都无法走双缓冲的快速路径。改成从最近的非透明祖先解析出的等效实色后,
+            // 视觉完全一致(截图逐区比对无差异), 但整棵树的绘制与布局成本降到原来的 1/7。
+            MakeOpaque(this);
             WireEvents();
             LoadSettings();
             _statusSerial.Text = "串口 " + _simTab.SerialState;
@@ -125,11 +161,70 @@ namespace IotLinkLab
                 Log($"运行日志: {LogStore.CurrentFile}", Theme.TextTertiary);
             };
 
-            // 窗口尺寸变化时按比例重算分隔位置, 否则缩小时日志区会被整个挤出可视区域
+            // 窗口尺寸变化时按比例重算分隔位置, 否则缩小时日志区会被整个挤出可视区域。
+            //
+            // 性能要点(实测数据): 我们自己写的布局方法全部在 0.15ms 内, 但"跨过档位阈值"的那一次
+            // 一定会触发一整棵控件树的重排 —— ApplyLayoutMode 跨断点 65ms、Sim 87ms、分隔条赋值 60ms,
+            // 单次合计 ~300ms。拖拽时 WM_SIZE 每帧涌入, 只要在拖拽过程中就重排, 就会掉帧。
+            //
+            // 因此改成"尺寸稳定后再重排": 拖拽期间只记录尺寸, 用 120ms 防抖定时器在用户停手后
+            // 统一做一次。拖拽过程本身由 TableLayoutPanel 的默认按比例布局跟随(不需要我们介入),
+            // 而档位切换 / 分隔条比例这类"非连续"调整本来也不需要逐帧生效。
             Resize += (s, e) =>
             {
+                if (_resizing) return;
+                _resizing = true;
+                try
+                {
+                    Size client = ClientSize;
+                    if (client != _lastClientSize)
+                    {
+                        _lastClientSize = client;
+                        // 拖拽期间挂起根布局: 让各层 TableLayoutPanel 不要在 WM_SIZE 洪流里
+                        // 逐帧重排(实测每帧 48~143ms, 必然掉帧)。停手后 ResumeLayout 一次收敛。
+                        if (!_layoutSuspendedByDrag)
+                        {
+                            _layoutSuspendedByDrag = true;
+                            _root.SuspendLayout();
+                        }
+                        _resizeSettle.Stop();
+                        _resizeSettle.Start();
+                    }
+                }
+                finally { _resizing = false; }
+            };
+
+            // 停手后统一做一次真正的布局收敛。
+            _resizeSettle.Tick += (s, e) =>
+            {
+                _resizeSettle.Stop();
+                if (IsDisposed || !IsHandleCreated) return;
+                using var _d = Diag.T("Form.Settle " + ClientSize.Width + "x" + ClientSize.Height);
+
+                // 关键: 拖拽期间挂起的布局不要在这里先解除。
+                // 早先的写法是「先 ResumeLayout 收敛一次(52ms), 再 ApplyLayoutMode 自己
+                // 又 SuspendLayout/ResumeLayout 收敛一次(65ms)」—— 同一棵树的整树重排
+                // 白做了两遍。现在让挂起状态一直保持到本方法末尾, ApplyLayoutMode 里的
+                // 挂起/解除只是在计数上嵌套一层(WinForms 的 SuspendLayout 是引用计数的),
+                // 最后在这里只解除一次, 全树只按最终尺寸重排一遍。
                 ApplyLayoutMode();
                 ApplySplitRatio();
+
+                if (_layoutSuspendedByDrag)
+                {
+                    _layoutSuspendedByDrag = false;
+                    using (Diag.T("Form.DragResume"))
+                    {
+                        _root.ResumeLayout(true);
+                        PerformLayout();
+                    }
+                }
+
+                // 上面两步会改内容区尺寸, 从而再次触发当前页的 Resize 并重启它自己的
+                // 防抖定时器 —— 若不在这里直接收尾, 120ms 后同一页会把同一件事再做一遍
+                // (实测重复付 56ms)。这里同步收敛并取消那次排队。
+                SettleActiveTab();
+                if (Diag.On) BeginInvoke(new Action(() => Diag.Mark("counters " + Diag.TakeCounters())));
             };
 
             _split.SplitterMoved += (s, e) =>
@@ -229,7 +324,7 @@ namespace IotLinkLab
             var mark = new PictureBox
             {
                 Size = new Size(UiFit.S(28), UiFit.S(28)), SizeMode = PictureBoxSizeMode.Zoom,
-                BackColor = Color.Transparent, Image = LoadImage("app-mark.png"),
+                BackColor = Color.Transparent, Image = LoadBrandMark(UiFit.S(28)),
                 Anchor = AnchorStyles.None, Margin = new Padding(0)
             };
             var titleStack = new TableLayoutPanel
@@ -346,10 +441,12 @@ namespace IotLinkLab
 
             var grid = new TableLayoutPanel
             {
-                Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 3,
+                Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 5,
                 BackColor = Color.Transparent, Margin = new Padding(0), Padding = new Padding(0)
             };
             grid.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100f));
+            grid.RowStyles.Add(new RowStyle(SizeType.Absolute, UiFit.S(Theme.HeightInput)));
+            grid.RowStyles.Add(new RowStyle(SizeType.Absolute, UiFit.S(Theme.GapXs * 2)));
             grid.RowStyles.Add(new RowStyle(SizeType.Absolute, UiFit.S(Theme.HeightInput)));
             grid.RowStyles.Add(new RowStyle(SizeType.Absolute, UiFit.S(Theme.GapXs * 2)));
             grid.RowStyles.Add(new RowStyle(SizeType.Absolute, UiFit.S(Theme.HeightInput)));
@@ -425,7 +522,123 @@ namespace IotLinkLab
             row2.Controls.Add(_controlTopicShell, 3, 0);
             grid.Controls.Add(row2, 0, 2);
 
+            // 第三行: 保存位置(日志 + 导出 CSV 的根目录)
+            // 默认是 %APPDATA%\IotLinkLab, 但演示/交付时经常要把文件放到 U 盘或项目目录,
+            // 所以给一个可编辑路径 + 「浏览」「使用默认」。空着即用默认目录。
+            var row3 = new TableLayoutPanel
+            {
+                Dock = DockStyle.Fill, ColumnCount = 4, RowCount = 1,
+                BackColor = Color.Transparent, Margin = new Padding(0)
+            };
+            row3.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+            row3.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100f));
+            row3.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+            row3.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+            row3.RowStyles.Add(new RowStyle(SizeType.Percent, 100f));
+
+            _saveDirBox = new TextBox { Font = Theme.Mono(9F), BorderStyle = BorderStyle.None, Text = "" };
+            _saveDirShell = new FieldShell(_saveDirBox) { Dock = DockStyle.Fill, Margin = new Padding(0, 0, UiFit.S(Theme.GapSm), 0) };
+
+            // 手输路径后按回车即生效: 路径框旁边虽有「浏览…」, 但把路径直接粘进来的场景更常见,
+            // 必须回车就能用。留空回车 = 恢复默认(与「使用默认」按钮等价)。
+            _saveDirBox.KeyDown += (s, e) =>
+            {
+                if (e.KeyCode != Keys.Enter) return;
+                e.SuppressKeyPress = true;
+                ApplySaveDir();
+            };
+            // 离开输入框时也顺手生效一次, 避免用户改了路径却忘了点任何按钮。
+            _saveDirBox.Leave += (s, e) =>
+            {
+                string typed = _saveDirBox.Text.Trim();
+                bool sameAsShown = AppPaths.IsCustom
+                    ? string.Equals(AppPaths.NormalizeRoot(typed), AppPaths.Root, StringComparison.OrdinalIgnoreCase)
+                    : typed.Length == 0;
+                if (!sameAsShown) ApplySaveDir();
+            };
+
+            var btnBrowse = new RoundedButton { Text = "浏览…", Outline = true, FillColor = Theme.Primary, TextColor = Theme.Primary, Margin = new Padding(0, 0, UiFit.S(Theme.GapSm), 0) };
+            btnBrowse.Click += (s, e) => BrowseSaveDir();
+            UiFit.SizeButton(btnBrowse, 36, 68);
+
+            var btnDefault = new RoundedButton { Text = "使用默认", Outline = true, FillColor = Theme.TextSecondary, TextColor = Theme.TextSecondary, Margin = new Padding(0) };
+            btnDefault.Click += (s, e) =>
+            {
+                _saveDirBox.Text = "";
+                ApplySaveDir();
+            };
+            UiFit.SizeButton(btnDefault, 36, 76);
+
+            row3.Controls.Add(FormLabel("保存位置", right: UiFit.S(Theme.GapSm)), 0, 0);
+            row3.Controls.Add(_saveDirShell, 1, 0);
+            row3.Controls.Add(btnBrowse, 2, 0);
+            row3.Controls.Add(btnDefault, 3, 0);
+            grid.Controls.Add(row3, 0, 4);
+
             _settingsCard.Controls.Add(grid);
+        }
+
+        /// <summary>选一个保存根目录(日志与导出 CSV 都会落到它下面)。</summary>
+        private void BrowseSaveDir()
+        {
+            using var dlg = new FolderBrowserDialog
+            {
+                Description = "选择日志与导出数据的保存位置",
+                UseDescriptionForTitle = true,
+                ShowNewFolderButton = true
+            };
+            string current = AppPaths.NormalizeRoot(_saveDirBox.Text) ?? AppPaths.Root;
+            try { if (Directory.Exists(current)) dlg.SelectedPath = current; } catch { }
+            if (dlg.ShowDialog(this) != DialogResult.OK) return;
+            _saveDirBox.Text = dlg.SelectedPath;
+            ApplySaveDir();
+        }
+
+        /// <summary>
+        /// 立即生效: 改根目录 → 重建 logs/exports 子目录 → 丢弃旧会话日志句柄(下次写入在新目录建文件)
+        /// → 存盘。目录不可写时回滚并提示, 不能静默把用户的日志写丢。
+        /// </summary>
+        private void ApplySaveDir()
+        {
+            string want = _saveDirBox.Text.Trim();
+            string? normalized = AppPaths.NormalizeRoot(want);
+
+            if (normalized == null && want.Length > 0)
+            {
+                Log($"保存位置无效: {want}", Theme.LogErr);
+                return;
+            }
+
+            // 探测目标目录是否真的可写(排除只读盘、无权限目录)
+            if (normalized != null)
+            {
+                try
+                {
+                    Directory.CreateDirectory(normalized);
+                    string probe = Path.Combine(normalized, $".write-test-{Guid.NewGuid():N}.tmp");
+                    File.WriteAllText(probe, "ok");
+                    File.Delete(probe);
+                }
+                catch (Exception ex)
+                {
+                    Log($"保存位置不可写, 已保留原设置: {ex.Message}", Theme.LogErr);
+                    return;
+                }
+            }
+
+            if (!AppPaths.SetRoot(normalized))
+            {
+                Log($"保存位置: {AppPaths.Root}", Theme.TextTertiary);
+                return;
+            }
+
+            AppPaths.EnsureAll();
+            LogStore.ResetFile();
+            Log($"保存位置已切换到: {AppPaths.Root}", Theme.LogOk);
+            Log($"后续日志与导出都会写到这里; 当前会话日志: {LogStore.CurrentFile}", Theme.TextTertiary);
+            _saveDirBox.Text = AppPaths.IsCustom ? AppPaths.Root : "";
+            SaveSettings();
+            if (!_logExpanded) UpdateLogLatest("保存位置已切换", Theme.LogOk);
         }
 
         private static Label FormLabel(string text, int left = 0, int right = 0) => new()
@@ -677,63 +890,274 @@ namespace IotLinkLab
             catch { return null; }
         }
 
+        /// <summary>
+        /// 取窗口图标: 依次尝试 assets/app.ico → exe 内嵌图标 → 无。
+        /// exe 内嵌图标由 csproj 的 ApplicationIcon 决定, 素材目录里的 app.ico 与它同源,
+        /// 这样标题栏、任务栏、Alt+Tab 三处图标保持一致, 不会出现"换了 ico 但窗口还是旧图"。
+        /// </summary>
+        internal static Icon? LoadAppIcon()
+        {
+            try
+            {
+                string p = Path.Combine(AppContext.BaseDirectory, "assets", "app.ico");
+                if (File.Exists(p))
+                {
+                    using var fs = new FileStream(p, FileMode.Open, FileAccess.Read, FileShare.Read);
+                    using var ms = new MemoryStream();
+                    fs.CopyTo(ms); ms.Position = 0;
+                    // 必须 new 一个副本: Icon 会持有流, 流释放后原对象不可用
+                    using var loaded = new Icon(ms);
+                    return (Icon)loaded.Clone();
+                }
+            }
+            catch { /* 落到下面的 exe 回退 */ }
+            try
+            {
+                string exe = Application.ExecutablePath;
+                if (!string.IsNullOrEmpty(exe) && File.Exists(exe))
+                {
+                    var ico = Icon.ExtractAssociatedIcon(exe);
+                    if (ico != null) return ico;
+                }
+            }
+            catch { }
+            return null;
+        }
+
+        /// <summary>
+        /// 界面左上角品牌标识。优先用 assets/app-mark.png(与 app.ico 同源导出),
+        /// 素材缺失时直接从 app.ico 的最大帧解码, 避免"标题栏换了新图标、左上角还是旧图"。
+        /// </summary>
+        internal static Image? LoadBrandMark()
+        {
+            var img = LoadImage("app-mark.png");
+            if (img != null) return img;
+            var ico = LoadAppIcon();
+            if (ico == null) return null;
+            using (ico) return ico.ToBitmap();
+        }
+
+        /// <summary>
+        /// 左上角标识按目标像素尺寸预先高质量缩放。
+        /// 原实现是把 256×256 位图塞进 28px 的 PictureBox 交给 Zoom 缩放,
+        /// GDI+ 默认插值会把它糊成一团; 预缩放后直接 1:1 贴图, 边缘干净且绘制更快。
+        /// </summary>
+        internal static Image? LoadBrandMark(int pixelSize)
+        {
+            var src = LoadBrandMark();
+            if (src == null) return null;
+            if (pixelSize <= 0 || src.Width <= pixelSize) return src;
+            try
+            {
+                var bmp = new Bitmap(pixelSize, pixelSize);
+                using var g = Graphics.FromImage(bmp);
+                g.InterpolationMode = System.Drawing.Drawing2D.InterpolationMode.HighQualityBicubic;
+                g.PixelOffsetMode = System.Drawing.Drawing2D.PixelOffsetMode.HighQuality;
+                g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.HighQuality;
+                g.CompositingQuality = System.Drawing.Drawing2D.CompositingQuality.HighQuality;
+                using var attrs = new System.Drawing.Imaging.ImageAttributes();
+                attrs.SetWrapMode(System.Drawing.Drawing2D.WrapMode.TileFlipXY);   // 抑制缩放边缘溢色
+                g.DrawImage(src, new Rectangle(0, 0, pixelSize, pixelSize),
+                    0, 0, src.Width, src.Height, GraphicsUnit.Pixel, attrs);
+                src.Dispose();
+                return bmp;
+            }
+            catch { return src; }
+        }
+
+
         // ==================== 布局模式 ====================
 
-        private void ApplyLayoutMode()
+        /// <summary>
+        /// 按 DPI/窗口尺寸切换紧凑布局。
+        /// 性能要点: 原实现每次 Resize 都无条件写 RowStyles.Height / Visible / NavChip.Text 并调用 FitTopBar,
+        /// 而 TableLayoutPanel 的每一个样式写入、每一个 Visible 翻转都会触发整棵子树的重新布局 + 重绘,
+        /// 拖拽窗口时 WM_SIZE 每帧涌入数次 → 布局风暴 → 严重掉帧。
+        /// 现在所有写入都先比对当前值, 且只有跨过宽度档位时才重算顶栏按钮宽度。
+        /// </summary>
+        private void ApplyLayoutMode(bool force = false)
         {
             if (!_uiBuilt || _applyingMode || _root == null || _root.IsDisposed) return;
+            using var _d = Diag.T("Form.ApplyLayoutMode");
             _applyingMode = true;
             try
             {
                 int w = ClientSize.Width;
                 int h = ClientSize.Height;
                 bool compact = h < UiFit.S(700);
-                if (compact != _compact)
-                {
-                    _compact = compact;
-                    _root.RowStyles[0].Height = UiFit.S(compact ? Theme.HeightTopBarCompact : Theme.HeightTopBar);
-                    _root.RowStyles[3].Height = UiFit.S(compact ? Theme.HeightStatusBarCompact : Theme.HeightStatusBar);
-                    _logGrid.RowStyles[0].Height = UiFit.S(_logExpanded ? 36 : (compact ? Theme.HeightLogCollapsedCompact : Theme.HeightLogCollapsed));
-                }
+                bool compactChanged = compact != _compact;
 
-                _subtitle.Visible = w >= UiFit.S(1200);
-                _btnHelp.Visible = w >= UiFit.S(1120);
-
+                bool wideSubtitle = w >= UiFit.S(1200);
+                bool wideHelp = w >= UiFit.S(1120);
                 bool narrow = w < UiFit.S(1120);
-                string[] full = { "① 设备模拟器 · 上行", "② 订阅监控台", "③ 控制台 · 下行" };
-                string[] shortNames = { "① 模拟器", "② 监控台", "③ 控制台" };
-                for (int i = 0; i < _navItems.Length; i++)
+                bool widthTierChanged = narrow != _narrow || wideSubtitle != _showSubtitle || wideHelp != _showHelp;
+                _narrow = narrow;
+                _showSubtitle = wideSubtitle;
+                _showHelp = wideHelp;
+
+                // 批量合并布局: RowStyle/Visible 的每个赋值都会立刻触发一次整棵子树重排,
+                // 跨断点时这里有 8~9 处写入 = 8~9 次全量重排(实测 113ms)。
+                // 全部写入都必须在挂起区内完成, 漏一处在外面就白挂起一次。
+                SuspendLayout();
+                _root.SuspendLayout();
+                try
                 {
-                    string want = narrow ? shortNames[i] : full[i];
-                    if (_navItems[i].Text != want) _navItems[i].Text = want;
+                    using (Diag.T("ALM.Compact"))
+                    {
+                        if (compactChanged)
+                        {
+                            _compact = compact;
+                            SetRowHeight(_root, 0, UiFit.S(compact ? Theme.HeightTopBarCompact : Theme.HeightTopBar));
+                            SetRowHeight(_root, 3, UiFit.S(compact ? Theme.HeightStatusBarCompact : Theme.HeightStatusBar));
+                            SetRowHeight(_logGrid, 0, UiFit.S(_logExpanded ? 36 : (compact ? Theme.HeightLogCollapsedCompact : Theme.HeightLogCollapsed)));
+                        }
+                    }
+
+                    using (Diag.T("ALM.Visible"))
+                    {
+                        SetVisible(_subtitle, wideSubtitle);
+                        SetVisible(_btnHelp, wideHelp);
+                    }
+
+                    if (widthTierChanged || force)
+                    {
+                        string[] full = { "① 设备模拟器 · 上行", "② 订阅监控台", "③ 控制台 · 下行" };
+                        string[] shortNames = { "① 模拟器", "② 监控台", "③ 控制台" };
+                        using (Diag.T("ALM.NavText"))
+                        {
+                            for (int i = 0; i < _navItems.Length; i++)
+                            {
+                                string want = narrow ? shortNames[i] : full[i];
+                                if (_navItems[i].Text != want) _navItems[i].Text = want;
+                            }
+                        }
+                    }
+
+                    using (Diag.T("ALM.Rows"))
+                    {
+                        SetVisible(_settingsCard, _settingsOpen);
+                        // 抽屉里 3 行输入(32+8+32+8+32=112) + 卡片上下 Padding(GapXs×2=8) + 上下 Margin(GapSm×2=16)
+                        SetRowHeight(_root, 1, _settingsOpen ? UiFit.S(136) : 0);
+                    }
+                }
+                finally
+                {
+                    using (Diag.T("ALM.ResumeLayout"))
+                    {
+                        _root.ResumeLayout(true);
+                        ResumeLayout(true);
+                    }
                 }
 
-                _settingsCard.Visible = _settingsOpen;
-                _root.RowStyles[1].Height = _settingsOpen ? UiFit.S(96) : 0;
-                FitTopBar();
+                // 顶栏按钮宽度与「文字 / 字体 / DPI」有关, 与窗口尺寸无关。
+                // 必须每次都调: 设置抽屉开合会改按钮文案(「设置」↔「收起设置」), 漏算会截字。
+                // 之所以不再昂贵: UiFit.TextWidth 已按 (文本,字体,DPI) 缓存测量结果,
+                // 且 FitButton/SetWidth 都只在结果真的变化时才写 Width。
+                using (Diag.T("ALM.FitTopBar")) FitTopBar();
             }
             finally { _applyingMode = false; }
+        }
+
+        /// <summary>只在值真的变化时写 Visible —— Visible 翻转会触发父容器的重新布局。</summary>
+        private static void SetVisible(Control? c, bool visible)
+        {
+            if (c == null || c.IsDisposed) return;
+            if (c.Visible != visible) c.Visible = visible;
+        }
+
+        /// <summary>只在高度真的变化时写 RowStyle —— 每个非等值写入都会让 TableLayoutPanel 全量重排。</summary>
+        private static void SetRowHeight(TableLayoutPanel? t, int index, float height)
+        {
+            if (t == null || t.IsDisposed) return;
+            if (index < 0 || index >= t.RowStyles.Count) return;
+            if (Math.Abs(t.RowStyles[index].Height - height) > 0.5f) t.RowStyles[index].Height = height;
+        }
+
+        private static void SetColumnWidth(TableLayoutPanel? t, int index, float width)
+        {
+            if (t == null || t.IsDisposed) return;
+            if (index < 0 || index >= t.ColumnStyles.Count) return;
+            if (Math.Abs(t.ColumnStyles[index].Width - width) > 0.001f) t.ColumnStyles[index].Width = width;
+        }
+
+        /// <summary>宽度只在真的变化时写入, 避免 Layout 事件白跑。</summary>
+        private static void SetWidth(Control? c, int width)
+        {
+            if (c == null || c.IsDisposed) return;
+            width = Math.Max(0, width);
+            if (c.Width != width) c.Width = width;
+        }
+
+        private static void SetHeight(Control? c, int height)
+        {
+            if (c == null || c.IsDisposed) return;
+            height = Math.Max(0, height);
+            if (c.Height != height) c.Height = height;
+        }
+
+        private static void SetPadding(Control? c, Padding padding)
+        {
+            if (c == null || c.IsDisposed) return;
+            if (c.Padding != padding) c.Padding = padding;
         }
 
         private void FitTopBar()
         {
             if (!_uiBuilt) return;
-            UiFit.SizeButton(_btnConnect, padTotal: 36, minWidth: 64);
-            UiFit.SizeButton(_btnDisconnect, padTotal: 36, minWidth: 64);
-            UiFit.SizeButton(_btnSettings, padTotal: 32, minWidth: 60);
-            UiFit.SizeButton(_btnLog, padTotal: 32, minWidth: 60);
-            _btnConnect.Height = _btnDisconnect.Height = _btnSettings.Height = _btnLog.Height = UiFit.S(Theme.HeightButton);
-            _btnHelp.Size = new Size(UiFit.S(28), UiFit.S(28));
+            FitButton(_btnConnect, 36, 64);
+            FitButton(_btnDisconnect, 36, 64);
+            FitButton(_btnSettings, 32, 60);
+            FitButton(_btnLog, 32, 60);
+            int btnH = UiFit.S(Theme.HeightButton);
+            SetHeight(_btnConnect, btnH);
+            SetHeight(_btnDisconnect, btnH);
+            SetHeight(_btnSettings, btnH);
+            SetHeight(_btnLog, btnH);
+            int help = UiFit.S(28);
+            if (_btnHelp.Width != help || _btnHelp.Height != help) _btnHelp.Size = new Size(help, help);
             FitSettingsFields();
+        }
+
+        /// <summary>按钮按文字实测宽度, 但只在结果不同时才写 Width。</summary>
+        private static void FitButton(Control? b, int padTotal, int minWidth)
+        {
+            if (b == null || b.IsDisposed) return;
+            int w = UiFit.TextWidth(b.Text, b.Font) + UiFit.Scale(b, padTotal);
+            if (minWidth > 0) w = Math.Max(w, UiFit.Scale(b, minWidth));
+            SetWidth(b, w);
         }
 
         private void FitSettingsFields()
         {
             if (_portShell == null) return;
-            UiFit.FitTextBox(_portBox, "65535", padTotal: 16);
-            _portShell.Width = _portBox.Width + UiFit.S(16);
-            UiFit.FitCombo(_protoCombo, padTotal: 26);
-            _protoShell.Width = _protoCombo.Width + UiFit.S(16);
+            FitField(_portBox, "65535", 16);
+            SetWidth(_portShell, _portBox.Width + UiFit.S(16));
+            if (_protoShell != null && _protoCombo != null)
+            {
+                FitComboWidth(_protoCombo, 26);
+                SetWidth(_protoShell, _protoCombo.Width + UiFit.S(16));
+            }
+        }
+
+        private static void FitField(TextBox? t, string sample, int padTotal)
+        {
+            if (t == null || t.IsDisposed) return;
+            int textW = UiFit.TextWidth(sample, t.Font);
+            SetWidth(t, Math.Max(UiFit.Scale(t, 72), textW + UiFit.Scale(t, 8) + UiFit.Scale(t, padTotal)));
+        }
+
+        private static void FitComboWidth(ComboBox? cb, int padTotal)
+        {
+            if (cb == null || cb.IsDisposed) return;
+            int max = 0;
+            foreach (var item in cb.Items)
+            {
+                int iw = UiFit.TextWidth(cb.GetItemText(item), cb.Font);
+                if (iw > max) max = iw;
+            }
+            if (cb.Text.Length > 0) max = Math.Max(max, UiFit.TextWidth(cb.Text, cb.Font));
+            int arrow = SystemInformation.VerticalScrollBarWidth + UiFit.Scale(cb, 10);
+            SetWidth(cb, Math.Max(UiFit.Scale(cb, 54), max + arrow + UiFit.Scale(cb, padTotal)));
         }
 
         // ==================== 日志抽屉状态 ====================
@@ -741,22 +1165,27 @@ namespace IotLinkLab
         private void ApplyLogStateUi()
         {
             if (_logShell == null) return;
-            _logShell.Visible = _logExpanded;
-            _logCard.Padding = _logExpanded
+            SetVisible(_logShell, _logExpanded);
+            SetPadding(_logCard, _logExpanded
                 ? new Padding(UiFit.S(Theme.GapMd), UiFit.S(Theme.GapSm), UiFit.S(Theme.GapMd), UiFit.S(Theme.GapSm))
-                : new Padding(UiFit.S(Theme.GapMd), 0, UiFit.S(Theme.GapMd), 0);
-            _logGrid.RowStyles[0].Height = UiFit.S(_logExpanded ? 36 : (_compact ? Theme.HeightLogCollapsedCompact : Theme.HeightLogCollapsed));
-            _btnLog.Text = _logExpanded ? "收起日志" : "日志";
-            if (_uiBuilt)
+                : new Padding(UiFit.S(Theme.GapMd), 0, UiFit.S(Theme.GapMd), 0));
+            SetRowHeight(_logGrid, 0, UiFit.S(_logExpanded ? 36 : (_compact ? Theme.HeightLogCollapsedCompact : Theme.HeightLogCollapsed)));
+            string btnText = _logExpanded ? "收起日志" : "日志";
+            if (_btnLog.Text != btnText)
             {
-                UiFit.SizeButton(_btnLog, padTotal: 32, minWidth: 60);
-                _btnLog.Height = UiFit.S(Theme.HeightButton);
+                _btnLog.Text = btnText;
+                if (_uiBuilt)
+                {
+                    FitButton(_btnLog, 32, 60);
+                    SetHeight(_btnLog, UiFit.S(Theme.HeightButton));
+                }
             }
-            _statusLogBtn.Text = _logExpanded ? "收起日志" : "展开日志";
+            string statusText = _logExpanded ? "收起日志" : "展开日志";
+            if (_statusLogBtn.Text != statusText) _statusLogBtn.Text = statusText;
             if (_logExpanded)
             {
                 _logHasError = false;
-                _logErrorDot.Visible = false;
+                SetVisible(_logErrorDot, false);
             }
         }
 
@@ -799,12 +1228,20 @@ namespace IotLinkLab
         /// </summary>
         private void ApplySplitRatio()
         {
+            using var _d = Diag.T("Form.ApplySplitRatio");
             try
             {
                 if (_split == null || _split.IsDisposed || _split.Height <= 0) return;
                 int usable = _split.Height - _split.SplitterWidth;
                 int p1min = UiFit.S(300);
-                int p2min = _logExpanded ? UiFit.S(120) : UiFit.S(_compact ? Theme.HeightLogCollapsedCompact : Theme.HeightLogCollapsed);
+
+                // 日志区高度在"收起"和"默认展开"下都是固定像素, 只有用户手动拖过分隔条才按比例。
+                bool fixedLog = !_logExpanded || !_userSplit;
+                int p2fixed = _logExpanded
+                    ? UiFit.S(168)
+                    : UiFit.S(_compact ? Theme.HeightLogCollapsedCompact : Theme.HeightLogCollapsed);
+                int p2min = _logExpanded ? UiFit.S(120) : p2fixed;
+
                 if (usable < p1min + p2min)
                 {
                     // 极端窗口: 展开态优先保证主区, 自动回到收起态
@@ -812,24 +1249,74 @@ namespace IotLinkLab
                     {
                         _logExpanded = false;
                         ApplyLogStateUi();
-                        p2min = UiFit.S(Theme.HeightLogCollapsedCompact);
+                        fixedLog = true;
+                        p2fixed = UiFit.S(Theme.HeightLogCollapsedCompact);
+                        p2min = p2fixed;
                     }
                     if (usable < p1min + p2min) return;
                 }
 
-                int targetP2 = _logExpanded
-                    ? (_userSplit ? (int)Math.Round(usable * (1 - _userSplitRatio)) : UiFit.S(168))
-                    : p2min;
-                targetP2 = Math.Max(p2min, Math.Min(usable - p1min, targetP2));
-                int target = usable - targetP2;
+                if (fixedLog)
+                {
+                    // 收起态/默认展开态: 日志区高度是死数。
+                    // 声明 Panel2 为固定面板后, 容器高度变化完全由 Panel1 吸收,
+                    // SplitContainer 自己维护, 我们只在"固定高度本身变了"时赋一次值。
+                    // (每帧重算并赋 SplitterDistance 会各自重建两侧子窗口, 实测 77~1000ms)
+                    int clamped = Math.Max(p2min, Math.Min(usable - p1min, p2fixed));
+                    if (_split.FixedPanel != FixedPanel.Panel2) _split.FixedPanel = FixedPanel.Panel2;
 
-                if (_split.SplitterDistance == target) return;
+                    // 关键: 判据要取「Panel2 的实际高度」, 而不是「上次设过的常量」。
+                    // FixedPanel = Panel2 时, SplitContainer 自己在尺寸变化中维持 Panel2 高度、
+                    // 自动移动分隔条 —— 也就是说绝大多数 Resize 根本不需要我们赋值。
+                    // 之前用 _appliedP2Fixed 比对, 只要容器高度变了就误判成「需要重设」,
+                    // 结果每次 Settle 都白付 86ms(单次 SplitterDistance 赋值要重建两侧子窗口)。
+                    int actualP2 = usable - _split.SplitterDistance;
 
-                _suppressSplitEvent = true;
-                try { _split.SplitterDistance = target; }
-                finally { _suppressSplitEvent = false; }
+                    // 容差: 实测容器尺寸每变一次, Panel2 实际高度会与目标值差 2~3px
+                    // (SplitContainer 内部按像素取整 + 分隔条宽度分摊)。
+                    // 3px 的日志栏高度差肉眼不可见, 但为它赋一次 SplitterDistance 要重建两侧
+                    // 子窗口(实测 107ms)。加容差后绝大多数 Settle 直接跳过。
+                    if (Math.Abs(actualP2 - clamped) > SplitterTolerancePx)
+                    {
+                        _appliedP2Fixed = clamped;
+                        _appliedFixedPanel = FixedPanel.Panel2;
+                        int target = usable - clamped;
+                        if (_split.SplitterDistance != target) SetSplitterDistance(target);
+                    }
+                }
+                else
+                {
+                    // 用户拖过: 两侧按比例分配, 同样交回原生处理(比例变了才赋值)
+                    if (_split.FixedPanel != FixedPanel.None) _split.FixedPanel = FixedPanel.None;
+                    if (_appliedFixedPanel != FixedPanel.None)
+                    {
+                        _appliedFixedPanel = FixedPanel.None;
+                        _appliedP2Fixed = -1;
+                    }
+                    double ratio = _userSplitRatio;
+                    if (Math.Abs(ratio - _appliedRatio) > 0.001)
+                    {
+                        _appliedRatio = ratio;
+                        int targetP2 = (int)Math.Round(usable * (1 - ratio));
+                        targetP2 = Math.Max(p2min, Math.Min(usable - p1min, targetP2));
+                        int target = usable - targetP2;
+                        if (Math.Abs(_split.SplitterDistance - target) > SplitterTolerancePx)
+                            SetSplitterDistance(target);
+                    }
+                }
             }
             catch { /* 极端窗口尺寸下忽略 */ }
+        }
+
+        private void SetSplitterDistance(int target)
+        {
+            _suppressSplitEvent = true;
+            try
+            {
+                using var _t = Diag.T("Form.SetSplitterDistance " + _split.SplitterDistance + "->" + target);
+                _split.SplitterDistance = target;
+            }
+            finally { _suppressSplitEvent = false; }
         }
 
         // ==================== 事件接线 ====================
@@ -990,15 +1477,143 @@ namespace IotLinkLab
 
         private void SwitchTab(int index)
         {
-            _simTab.Visible = index == 0;
-            _monTab.Visible = index == 1;
-            _ctlTab.Visible = index == 2;
-            for (int i = 0; i < _navItems.Length; i++)
+            // 只切「当前页」与「上一页」两个控件的 Visible: 三个 tab 都常驻内容区,
+            // 隐藏中的 tab 写 Visible=false 是空操作但依然会走进 Control 的可见性变更流程。
+            // 同时不再为每个 NavChip 额外调 Invalidate —— NavChip.Selected 的 setter 内部已按需重绘,
+            // 原来的做法等于每次切页把整条导航栏强制重画两遍。
+            if (_activeTab == index) { SyncDeviceEchoFor(index); return; }
+            _activeTab = index;
+            using var _sw = Diag.T("Form.SwitchTab " + index);
+
+            // 三页常驻内容区, 切页只翻 Visible。
+            //
+            // 为什么不再用 Controls.Clear() 重挂: 重挂会重建整棵控件树, 实测 20~49ms(切页的全部开销),
+            // 而且会丢掉焦点/滚动位置。改回常驻 + 下面一条"隐藏页挂起布局"就同时解决了两个问题:
+            //   - 隐藏页不参与绘制(Visible=false 时不派发 WM_PAINT);
+            //   - 隐藏页不参与布局(在它自己的 Resize 里, 见 SetTabLayoutSuspended)。
+            // 原来"隐藏 tab 仍走布局"的根因是 SetBounds → Resize → TableLayoutPanel 重排,
+            // 只要隐藏页在 Resize 时直接早退, 这条链就断了, 不需要把控件移出控件树。
+            Control? want = index switch { 0 => _simTab, 1 => _monTab, 2 => _ctlTab, _ => null };
+            if (want != null)
             {
-                _navItems[i].Selected = i == index;
-                _navItems[i].Invalidate();
+                using (Diag.T("ST.Visible"))
+                {
+                    SuspendLayout();
+                    _content.SuspendLayout();
+                    try
+                    {
+                        if (_simTab != null) SetTabLayout(_simTab, index == 0, want);
+                        if (_monTab != null) SetTabLayout(_monTab, index == 1, want);
+                        if (_ctlTab != null) SetTabLayout(_ctlTab, index == 2, want);
+                    }
+                    finally
+                    {
+                        _content.ResumeLayout(true);
+                        ResumeLayout(true);
+                    }
+                }
+                using (Diag.T("ST.RelayoutTab")) RelayoutActiveTab(want);
             }
+            using (Diag.T("ST.Nav"))
+            {
+                for (int i = 0; i < _navItems.Length; i++) _navItems[i].Selected = i == index;
+            }
+            SyncDeviceEchoFor(index);
+        }
+
+        /// <summary>
+        /// 切页: 目标页恢复布局并显示, 其它页挂起布局并隐藏。
+        /// 顺序很重要 —— 先挂起旧页再显示新页, 否则中途会各重排一次。
+        /// </summary>
+        private static void SetTabLayout(Control tab, bool active, Control wanted)
+        {
+            if (tab == wanted)
+            {
+                if (!tab.Visible) tab.Visible = true;
+            }
+            else
+            {
+                if (tab.Visible) tab.Visible = false;
+                SuspendTabLayout(tab);
+            }
+        }
+
+        /// <summary>隐藏页挂起布局: 让它在尺寸变化时不再做整树重排。</summary>
+        private static void SuspendTabLayout(Control tab)
+        {
+            switch (tab)
+            {
+                case SimulatorTab sim: sim.LayoutSuspended = true; break;
+                case MonitorTab mon: mon.LayoutSuspended = true; break;
+                case ControlTab ctl: ctl.LayoutSuspended = true; break;
+            }
+        }
+
+        /// <summary>
+        /// 刚成为当前页的页需要按当前尺寸重算一次响应式档位(它在隐藏期间尺寸可能是旧的)。
+        /// 只排入防抖队列, 不在这里同步重排 —— 整树重排要 60~100ms, 同步做会让切页卡这么一下。
+        /// </summary>
+        private static void RelayoutActiveTab(Control tab)
+        {
+            switch (tab)
+            {
+                case SimulatorTab sim: sim.LayoutSuspended = false; sim.RequestSettle(); break;
+                case MonitorTab mon: mon.LayoutSuspended = false; mon.RequestSettle(); break;
+                case ControlTab ctl: ctl.LayoutSuspended = false; ctl.RequestSettle(); break;
+            }
+        }
+
+        /// <summary>
+        /// 让当前页立刻收敛, 并取消它排队中的防抖重排。
+        /// 仅用于 Form 自己刚改完布局(已导致当前页尺寸变化)之后 —— 此时页面已经收到了
+        /// Resize 并重启了定时器, 再等 120ms 只是把同一件事重做一遍。
+        /// </summary>
+        private void SettleActiveTab()
+        {
+            switch (_activeTab)
+            {
+                case 0: _simTab.SettleNow(); break;
+                case 1: _monTab.SettleNow(); break;
+                case 2: _ctlTab.SettleNow(); break;
+            }
+        }
+
+        private void SyncDeviceEchoFor(int index)
+        {
             if (index == 2) SyncDeviceEcho();
+        }
+
+        /// <summary>
+        /// 诊断/优化用: 把控件树里所有 BackColor=Transparent 换成最近的非透明祖先色。
+        /// Transparent 在 WinForms 里不是 alpha 合成, 而是"绘制时向父控件要背景",
+        /// 多层嵌套下每次重绘都会沿祖先链逐层回溯, 是改变尺寸时的主要开销来源。
+        /// </summary>
+        internal static void MakeOpaque(Control root)
+        {
+            foreach (Control child in root.Controls)
+            {
+                if (child.BackColor == Color.Transparent)
+                {
+                    // 先递归处理子级(它们要参考本控件处理后的颜色), 再决定自己的颜色
+                    MakeOpaque(child);
+                    Color inherited = ResolveOpaqueBackColor(child.Parent);
+                    if (inherited != Color.Empty && child.BackColor != inherited) child.BackColor = inherited;
+                }
+                else
+                {
+                    MakeOpaque(child);
+                }
+            }
+        }
+
+        private static Color ResolveOpaqueBackColor(Control? c)
+        {
+            while (c != null)
+            {
+                if (c.BackColor != Color.Transparent && c.BackColor != Color.Empty) return c.BackColor;
+                c = c.Parent;
+            }
+            return Theme.PageBg;
         }
 
         private async Task ConnectAsync()
@@ -1240,6 +1855,14 @@ namespace IotLinkLab
                 }
                 if (r.TryGetProperty("dataTopic", out var v4)) _dataTopicBox.Text = v4.GetString() ?? _dataTopicBox.Text;
                 if (r.TryGetProperty("controlTopic", out var v5)) _controlTopicBox.Text = v5.GetString() ?? _controlTopicBox.Text;
+                // 保存位置: settings.json 本身始终留在 %APPDATA%\IotLinkLab(不随保存位置搬家),
+                // 否则改一次路径就再也读不回自己的配置。
+                if (r.TryGetProperty("saveRoot", out var v8) && v8.ValueKind == JsonValueKind.String)
+                {
+                    AppPaths.SetRoot(v8.GetString());
+                    AppPaths.EnsureAll();   // 自定义目录可能还没建过/盘符换了, 这里立刻补齐
+                    _saveDirBox.Text = AppPaths.IsCustom ? AppPaths.Root : "";
+                }
                 // useWs 放最后: 它会触发端口自动切换, 不能覆盖已恢复的端口
                 if (r.TryGetProperty("useWs", out var v3) && v3.ValueKind == JsonValueKind.True) _protoCombo.SelectedIndex = 1;
                 if (r.TryGetProperty("logOpen", out var v6) && v6.ValueKind == JsonValueKind.True) _logExpanded = true;
@@ -1266,7 +1889,8 @@ namespace IotLinkLab
                     dataTopic = _dataTopicBox.Text.Trim(),
                     controlTopic = _controlTopicBox.Text.Trim(),
                     logOpen = _logExpanded,
-                    logRatio = _userSplit ? _userSplitRatio : 0
+                    logRatio = _userSplit ? _userSplitRatio : 0,
+                    saveRoot = AppPaths.IsCustom ? AppPaths.Root : ""
                 };
                 File.WriteAllText(Path.Combine(AppDataDir, "settings.json"),
                     JsonSerializer.Serialize(obj, new JsonSerializerOptions { WriteIndented = true }),
@@ -1279,8 +1903,9 @@ namespace IotLinkLab
         {
             base.OnHandleCreated(e);
             if (!_uiBuilt) return;
+            // 句柄创建后 DPI 才确定, 这里强制重算一次字体宽度相关的顶栏按钮尺寸
             FitTopBar();
-            ApplyLayoutMode();
+            ApplyLayoutMode(force: true);
         }
 
         protected override async void OnFormClosing(FormClosingEventArgs e)

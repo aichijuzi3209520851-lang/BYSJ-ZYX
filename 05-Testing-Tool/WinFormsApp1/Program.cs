@@ -8,6 +8,7 @@ namespace IotLinkLab
         static void Main()
         {
             ApplicationConfiguration.Initialize();
+            Diag.InstallMessageCounter();
             Application.Run(new Form1());
         }
     }

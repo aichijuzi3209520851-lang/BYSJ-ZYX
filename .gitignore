@@ -34,3 +34,8 @@ project.private.config.json
 _archive/
 emqx-*-windows-amd64/
 *.zip
+
+# ===== 性能探针截图(一次性验收素材, 不入库) =====
+# diag/ 下的探针脚本与说明入库留存方法, 截图会过期故忽略
+05-Testing-Tool/diag/*.png
+.trae/

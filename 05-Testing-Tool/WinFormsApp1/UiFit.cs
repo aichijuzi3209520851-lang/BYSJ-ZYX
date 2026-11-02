@@ -40,7 +40,38 @@ namespace IotLinkLab
         public static int TextWidth(string? text, Font font)
             => string.IsNullOrEmpty(text)
                 ? 0
-                : TextRenderer.MeasureText(text, font, new Size(int.MaxValue, int.MaxValue), MeasureFlags).Width;
+                : MeasureCached(text, font);
+
+        /// <summary>
+        /// TextRenderer.MeasureText 是 GDI 文字测量的重操作(内部要建 DC、选字体、量字串)。
+        /// 顶栏按钮宽度、状态徽章、导航胶囊都会在布局热路径上反复量同一串文字,
+        /// 拖动窗口时每秒数百次 → 直接表现为掉帧。这里按 (文本, 字体, DPI) 记忆结果,
+        /// 命中即返回, 量过的文案只付一次代价。
+        /// </summary>
+        private static readonly Dictionary<(string Text, string Family, float Size, FontStyle Style, int Dpi), int> WidthCache = new();
+        private const int WidthCacheLimit = 2048;
+
+        private static int MeasureCached(string text, Font font)
+        {
+            int dpi = font.Unit == GraphicsUnit.Point ? Dpi() : Dpi();
+            var key = (text, font.FontFamily.Name, font.Size, font.Style, dpi);
+            if (WidthCache.TryGetValue(key, out int cached)) return cached;
+            int w;
+            try
+            {
+                w = TextRenderer.MeasureText(text, font, new Size(int.MaxValue, int.MaxValue), MeasureFlags).Width;
+            }
+            catch { return text.Length * 8; }
+            if (WidthCache.Count >= WidthCacheLimit) WidthCache.Clear();   // 文案随协议变化, 上限即清
+            WidthCache[key] = w;
+            return w;
+        }
+
+        /// <summary>DPI/字体变更后调用, 使文字宽度缓存失效。</summary>
+        public static void InvalidateTextCache()
+        {
+            WidthCache.Clear();
+        }
 
         public static int MaxItemWidth(ComboBox cb)
         {
@@ -53,12 +84,23 @@ namespace IotLinkLab
             return max;
         }
 
+        /// <summary>
+        /// 值未变就不写 Width。
+        /// Width 的 setter 会走 SetBounds → 父级 TableLayoutPanel 重排 → 兄弟控件重新测量,
+        /// 即使赋的是同一个值也一样。下面几个 Fit* 每次尺寸稳定后都会被调用一遍,
+        /// 无条件赋值等于每次收敛都白付一次全树布局(模拟器页实测 ~50ms)。
+        /// </summary>
+        private static void SetWidth(Control c, int width)
+        {
+            if (c.Width != width) c.Width = width;
+        }
+
         /// <summary>按钮宽度 = 文字宽 + 左右留白; minWidth 给个下限避免小按钮过窄。</summary>
         public static void SizeButton(Control b, int padTotal = 40, int minWidth = 0)
         {
             int w = TextWidth(b.Text, b.Font) + Scale(b, padTotal);
             if (minWidth > 0) w = Math.Max(w, Scale(b, minWidth));
-            b.Width = w;
+            SetWidth(b, w);
         }
 
         /// <summary>下拉框: 取最长选项 + 箭头区, 保证任何一项都完整显示。</summary>
@@ -68,7 +110,7 @@ namespace IotLinkLab
             if (cb.Text.Length > 0) max = Math.Max(max, TextWidth(cb.Text, cb.Font));
             int arrow = SystemInformation.VerticalScrollBarWidth + Scale(cb, 10);
             int w = max + arrow + Scale(cb, padTotal);
-            cb.Width = Math.Max(Scale(cb, 54), w);
+            SetWidth(cb, Math.Max(Scale(cb, 54), w));
         }
 
         /// <summary>数字框: 按最大值的字符宽度 + 上下箭头区, 避免高位被裁。</summary>
@@ -79,14 +121,14 @@ namespace IotLinkLab
                 : ((long)n.Maximum).ToString();
             int textW = TextWidth(longest, n.Font);
             int arrows = SystemInformation.VerticalScrollBarWidth + Scale(n, 4);
-            n.Width = textW + arrows + Scale(n, padTotal);
+            SetWidth(n, textW + arrows + Scale(n, padTotal));
         }
 
         /// <summary>单行输入框: 按样本文案实测宽度 + 左右留白。</summary>
         public static void FitTextBox(TextBox t, string sample, int padTotal = 26)
         {
             int textW = TextWidth(sample, t.Font);
-            t.Width = Math.Max(Scale(t, 72), textW + Scale(t, 8) + Scale(t, padTotal));
+            SetWidth(t, Math.Max(Scale(t, 72), textW + Scale(t, 8) + Scale(t, padTotal)));
         }
 
         /// <summary>把控件放在网格单元的正中(同时垂直/水平居中, 不再用手写 Margin.Top 找基线)。</summary>

@@ -39,16 +39,30 @@ namespace IotLinkLab
 
         public static void Clear() { lock (Gate) Rows.Clear(); }
 
-        public static string ExportCsv()
+        /// <summary>
+        /// 导出成 CSV。targetPath 为空时落到默认目录(%APPDATA%\IotLinkLab\exports 或用户自定义根目录),
+        /// 指定时按指定位置写(用户在设置抽屉里选了固定保存位置的情况)。
+        /// </summary>
+        public static string ExportCsv(string? targetPath = null)
         {
             List<DataRow> rows;
             lock (Gate) rows = new List<DataRow>(Rows);
 
-            AppPaths.EnsureAll();
-            string path = Path.Combine(AppPaths.ExportsDir, $"data-{AppPaths.Stamp()}.csv");
+            string path;
+            if (!string.IsNullOrWhiteSpace(targetPath))
+            {
+                path = targetPath!;
+                string? dir = Path.GetDirectoryName(path);
+                if (!string.IsNullOrEmpty(dir)) Directory.CreateDirectory(dir);
+            }
+            else
+            {
+                AppPaths.EnsureAll();
+                path = Path.Combine(AppPaths.ExportsDir, $"data-{AppPaths.Stamp()}.csv");
+            }
 
             var sb = new StringBuilder();
-            sb.AppendLine("时间,方向,主题,温度℃,湿度%RH,土壤%,光照%,raw,天窗,风扇,模式,空气质量,报警,帧文本,载荷");
+            sb.AppendLine("时间,方向,主题,温度℃,湿度%RH,土壤湿度%,光照%,光照强度,天窗,风扇,模式,空气质量,报警,帧文本,载荷");
 
             var inv = CultureInfo.InvariantCulture;
             foreach (var r in rows)

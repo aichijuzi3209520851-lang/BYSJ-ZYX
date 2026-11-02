@@ -39,6 +39,50 @@ namespace IotLinkLab
         private readonly Random _rnd = new();
         private bool _uiBuilt;                                                        // BuildUi 完成后才允许按 DPI 复测宽度
         private bool _densityApplying;
+        private bool? _tight;   // 高度档位快照: 只有真跨断点才重写 RowStyle/Padding (null = 尚未布局过)
+
+        /// <summary>
+        /// 非当前页时为 true: 尺寸变化不再触发任何响应式重排。
+        /// WinForms 对不可见子控件依然会走 SetBounds → Resize, 隐藏页若照常重排,
+        /// 改窗口大小时三页各排一遍(实测分别 25~85ms)。切页时由 Form1 设置本标志。
+        /// </summary>
+        [System.ComponentModel.DesignerSerializationVisibility(System.ComponentModel.DesignerSerializationVisibility.Hidden)]
+        public bool LayoutSuspended { get; set; }
+
+        /// <summary>
+        /// 尺寸稳定后才做响应式重排。
+        /// 拖拽窗口时 WM_SIZE 每帧涌入, 而本页跨断点的重排实测 60ms 以上(整棵 TableLayoutPanel 子树),
+        /// 逐帧执行必然掉帧。档位切换/内边距这类调整本来就是"非连续"的, 不需要逐帧生效:
+        /// 拖拽过程由 TableLayoutPanel 默认按比例布局自动跟随, 停手后再收敛一次即可。
+        /// </summary>
+        private readonly System.Windows.Forms.Timer _resizeSettle = new() { Interval = 120 };
+
+        /// <summary>
+        /// 请求在尺寸稳定后重排一次, 不阻塞调用方。
+        /// 切页时用它而不是立刻重排: 本页隐藏期间尺寸可能已变, 但立刻整树重排实测
+        /// 要 60~100ms, 切页就会卡这么一下; 推迟到下一个防抖窗口做, 视觉上只是
+        /// 内边距/档位晚 120ms 到位(差 4px, 不可见), 而切页本身立刻响应。
+        /// </summary>
+        public void RequestSettle()
+        {
+            _tight = null;          // 隐藏期间尺寸可能已变, 档位快照不可信
+            _resizeSettle.Stop();
+            _resizeSettle.Start();
+        }
+
+        /// <summary>
+        /// 立刻按当前尺寸收敛一次, 并取消排队中的防抖重排。
+        /// 父窗体 Settle 会改本页尺寸从而再次触发本页 Resize, 若不自销就会在 120ms 后
+        /// 把同一件事再做一遍(实测重复付 56ms)。由 Form1 在改完布局后直接调用本方法。
+        /// </summary>
+        public void SettleNow()
+        {
+            _resizeSettle.Stop();
+            if (IsDisposed || !IsHandleCreated || LayoutSuspended) return;
+            using var _d = Diag.T("Sim.Settle");
+            FitAllWidths();
+            ApplyResponsive();
+        }
 
         /// <summary>图标位图缓存: 同一张 PNG 只解码一次, 且已复制到内存(不锁文件)。</summary>
         private static readonly Dictionary<string, Image?> IconCache = new();
@@ -108,7 +152,22 @@ namespace IotLinkLab
             _uiBuilt = true;
             FitAllWidths();
             ApplyResponsive();
-            Resize += (s, e) => ApplyResponsive();
+
+            // 拖拽中只记录, 不重排: 逐帧重排实测 60ms+/次, 必然掉帧。
+            // 停手 120ms 后再按最终尺寸收敛一次(拖拽过程由 TableLayoutPanel 自身按比例跟随)。
+            _resizeSettle.Tick += (s, e) => SettleNow();
+            Resize += (s, e) =>
+            {
+                if (LayoutSuspended || !_uiBuilt) return;
+                _resizeSettle.Stop();
+                _resizeSettle.Start();
+            };
+        }
+
+        protected override void Dispose(bool disposing)
+        {
+            if (disposing) _resizeSettle.Dispose();
+            base.Dispose(disposing);
         }
 
         /// <summary>左卡: 场景预设 → 传感器数值 → 帧模板(吃掉卡片剩余高度)。</summary>
@@ -160,9 +219,10 @@ namespace IotLinkLab
             for (int i = 0; i < 3; i++) grid.RowStyles.Add(new RowStyle(SizeType.AutoSize));
             (_numTemp, _) = MakeNum("温度°C", "temp", 0, 100, 24, grid, 0, 0);
             (_numHumi, _) = MakeNum("湿度%", "humi", 0, 100, 62, grid, 1, 0);
-            (_numSoil, _) = MakeNum("土壤%", null, 0, 100, 35, grid, 0, 1);      // 工程里没有土壤图标, 不硬凑
+            (_numSoil, _) = MakeNum("土壤湿度%", "soil", 0, 100, 35, grid, 0, 1);
             (_numLight, _) = MakeNum("光照%", "light", 0, 100, 72, grid, 1, 1);
-            (_numRaw, _) = MakeNum("raw", null, 0, 4095, 2080, grid, 0, 2);
+            // 界面标签改叫「光照强度」, 但帧内字段仍是 raw=, 不改协议(设备端按 raw= 解析)。
+            (_numRaw, _) = MakeNum("光照强度", "led", 0, 4095, 2080, grid, 0, 2);
             layout.Controls.Add(grid, 0, 3);
 
             layout.Controls.Add(MakeTitle("固件 V1.2 帧模板"), 0, 4);
@@ -527,13 +587,19 @@ namespace IotLinkLab
             UiFit.FitCombo(_comPort);
             UiFit.FitCombo(_comBaud);
 
+            // 宽度只有 DPI/字体变化时才会变, 但 Shell.Width 的赋值本身会触发
+            // FieldShell.LayoutInner + 外层 TableLayoutPanel 重排。无条件写 = 每次
+            // 收敛都白排一遍(实测 5 个 Shell 各写一次, 累计 ~50ms)。改成值未变不写。
             foreach (var pair in _numShells)
             {
                 UiFit.FitNumeric(pair.Num);
-                pair.Shell.Width = pair.Num.Width + UiFit.S(16);
+                int want = pair.Num.Width + UiFit.S(16);
+                if (pair.Shell.Width != want) pair.Shell.Width = want;
             }
-            _comPortShell.Width = _comPort.Width + UiFit.S(16);
-            _comBaudShell.Width = _comBaud.Width + UiFit.S(16);
+            int portWant = _comPort.Width + UiFit.S(16);
+            if (_comPortShell.Width != portWant) _comPortShell.Width = portWant;
+            int baudWant = _comBaud.Width + UiFit.S(16);
+            if (_comBaudShell.Width != baudWant) _comBaudShell.Width = baudWant;
 
             UiFit.SizeButton(_btnOnce, padTotal: 34, minWidth: 92);
             UiFit.SizeButton(_btnStart, padTotal: 34, minWidth: 92);
@@ -549,6 +615,7 @@ namespace IotLinkLab
         private void ApplyResponsive()
         {
             if (!_uiBuilt || _densityApplying || _root == null || _root.IsDisposed) return;
+            using var _d = Diag.T("Sim.ApplyResponsive");
             _densityApplying = true;
             try
             {
@@ -556,19 +623,42 @@ namespace IotLinkLab
                 float left = w >= UiFit.S(1280) ? 42f : 40f;
                 if (!_root.ColumnStyles[0].Width.Equals(left)) _root.ColumnStyles[0].Width = left;
 
+                // RowStyle / Padding 的写入会触发整个 TableLayoutPanel 子树重排,
+                // 而这些值只随断点变化; 原实现每次 Resize 无条件重写 → 拖窗口时布局风暴。
                 bool tight = Height < UiFit.S(560);
-                _root.RowStyles[1].Height = UiFit.S((tight ? Theme.HeightStateBarCompact : Theme.HeightStateBar) + Theme.GapMd);
-                _rightLayout.RowStyles[2].Height = UiFit.S(tight ? 56 : 64);
-
-                int pad = UiFit.S(tight ? 12 : 16);
-                if (_leftCard.Padding.Left != pad)
+                if (_tight == tight) return;
+                _tight = tight;
+                // 批量合并布局: RowStyle/Padding 每个赋值都会立刻触发一次 TableLayoutPanel 全量重排,
+                // 5 个赋值 = 5 次重排(实测 78ms)。挂起后统一提交只需一次。
+                SuspendLayout();
+                _root.SuspendLayout();
+                _rightLayout.SuspendLayout();
+                try
                 {
+                    SetRowHeight(_root, 1, UiFit.S((tight ? Theme.HeightStateBarCompact : Theme.HeightStateBar) + Theme.GapMd));
+                    SetRowHeight(_rightLayout, 2, UiFit.S(tight ? 56 : 64));
+
+                    int pad = UiFit.S(tight ? 12 : 16);
                     _leftCard.Padding = new Padding(pad);
                     _rightCard.Padding = new Padding(pad);
                     _leftCard.Margin = new Padding(0, 0, UiFit.S(tight ? 12 : 16), 0);
                 }
+                finally
+                {
+                    _rightLayout.ResumeLayout(true);
+                    _root.ResumeLayout(true);
+                    ResumeLayout(true);
+                }
             }
             finally { _densityApplying = false; }
+        }
+
+        /// <summary>只在高度真的变化时写 RowStyle, 避免无谓的整表重排。</summary>
+        private static void SetRowHeight(TableLayoutPanel? t, int index, float height)
+        {
+            if (t == null || t.IsDisposed) return;
+            if (index < 0 || index >= t.RowStyles.Count) return;
+            if (Math.Abs(t.RowStyles[index].Height - height) > 0.5f) t.RowStyles[index].Height = height;
         }
 
         /// <summary>图标加载: 从 assets/icons 读 PNG 并复制到内存位图, 避免锁文件; 失败返回 null(界面降级为纯文字)。</summary>
@@ -687,7 +777,12 @@ namespace IotLinkLab
                 FrameProduced?.Invoke(frame, fd, json);
 
                 if (_chkSerial.Checked) WriteSerial(frame + "\r\n");
-                Log?.Invoke($"[{source}] 帧已生成: Temp={ (fd.HasTempHum ? fd.Temp.ToString("0.0") : "--") } Soil={fd.Soil} Air={fd.Air}{(fd.Warning ? " [报警]" : "")}");
+                // 日志里写「完整帧文本」, 不要手挑字段。
+                // 以前这里只拼了 Temp/Soil/Air 三项, 而预览框是模板渲染出的全部字段
+                // (Temp Humi Soil Light Servo Motor Mode Air Warning), 于是同一帧在
+                // 预览里 8 项、在日志里 3 项 —— 两份各自拼装的文字必然漂移。
+                // 直接记录 frame 本身, 它与串口输出逐字节一致, 从构造上就不可能对不上。
+                Log?.Invoke($"[{source}] 帧已生成: {frame}{(fd.Warning ? " [报警]" : "")}");
             }
             catch (Exception ex)
             {
@@ -700,7 +795,7 @@ namespace IotLinkLab
             string t = fd.HasTempHum ? fd.Temp.ToString("0.0") : "null";
             string h = fd.HasTempHum ? fd.Hum.ToString("0.0") : "null";
             var (alarm, has) = Alarm.Evaluate(fd.HasTempHum ? fd.Temp : 0, fd.HasTempHum ? fd.Hum : 0, fd.Soil, fd.Air);
-            return $"温度={t}  湿度={h}  土壤={fd.Soil}  光照={fd.Light}  Servo={fd.Servo.Trim()}  Motor={fd.Motor}  Mode={fd.Mode}  Air={fd.Air}  Warning={fd.Warning}  报警={alarm}{(has ? " ★" : "")}";
+            return $"温度={t}  湿度={h}  土壤湿度={fd.Soil}  光照={fd.Light}  Servo={fd.Servo.Trim()}  Motor={fd.Motor}  Mode={fd.Mode}  Air={fd.Air}  Warning={fd.Warning}  报警={alarm}{(has ? " ★" : "")}";
         }
 
         private void BtnStart_Click(object? sender, EventArgs e)

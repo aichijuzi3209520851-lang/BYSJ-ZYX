@@ -22,6 +22,8 @@
   <ItemGroup>
     <None Include="assets/banner.jpg" CopyToOutputDirectory="PreserveNewest" />
     <None Include="assets/app-mark.png" CopyToOutputDirectory="PreserveNewest" />
+    <!-- 运行时窗口图标与界面标识同源: app.ico 必须跟着输出, 否则 Form 只能退回 exe 内嵌图标 -->
+    <None Include="assets/app.ico" CopyToOutputDirectory="PreserveNewest" />
     <None Include="assets/icons/*.png" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 

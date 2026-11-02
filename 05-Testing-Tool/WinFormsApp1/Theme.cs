@@ -59,11 +59,24 @@ namespace IotLinkLab
         public const int GapXl = 20;
         public const int Pad = 16;
 
-        public static Font Ui(float size, bool bold = false)
-            => new Font("微软雅黑", size, bold ? FontStyle.Bold : FontStyle.Regular);
+        // 字体缓存: 同一 (字族, 字号, 粗细) 只创建一次。
+        // 原实现每次调用都 new Font, 而调用点遍布控件构造、FitTopBar、ApplyLayoutMode 等热路径,
+        // 每次 Resize 都会累积几十个 GDI 字体句柄且从不释放 —— 既是句柄泄漏也是布局期主要开销。
+        private static readonly Dictionary<(string Family, float Size, FontStyle Style), Font> FontCache = new();
 
-        public static Font Mono(float size, bool bold = false)
-            => new Font("Consolas", size, bold ? FontStyle.Bold : FontStyle.Regular);
+        public static Font Ui(float size, bool bold = false) => GetFont("微软雅黑", size, bold);
+
+        public static Font Mono(float size, bool bold = false) => GetFont("Consolas", size, bold);
+
+        private static Font GetFont(string family, float size, bool bold)
+        {
+            var style = bold ? FontStyle.Bold : FontStyle.Regular;
+            var key = (family, size, style);
+            if (FontCache.TryGetValue(key, out var cached) && cached != null) return cached;
+            var font = new Font(family, size, style);
+            FontCache[key] = font;
+            return font;
+        }
 
         // ---------- 字体层级(只保留 5 档) ----------
         public static Font Title() => Ui(14F, bold: true);

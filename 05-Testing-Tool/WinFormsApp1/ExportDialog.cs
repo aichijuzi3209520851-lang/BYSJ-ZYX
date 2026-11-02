@@ -180,12 +180,17 @@ namespace IotLinkLab
 
         private void SaveAs()
         {
+            // 起始目录跟随当前文件所在目录(它由「设置 → 保存位置」决定), 不再写死到默认导出目录。
+            string initial = Path.GetDirectoryName(_path) is { Length: > 0 } d && Directory.Exists(d)
+                ? d
+                : AppPaths.ExportsDir;
             using var dlg = new SaveFileDialog
             {
                 Title = "另存为",
                 FileName = Path.GetFileName(_path),
                 Filter = "文本/CSV 文件 (*.log;*.txt;*.csv)|*.log;*.txt;*.csv|所有文件 (*.*)|*.*",
-                InitialDirectory = AppPaths.ExportsDir
+                InitialDirectory = initial,
+                OverwritePrompt = true
             };
             if (dlg.ShowDialog(this) != DialogResult.OK) return;
             try

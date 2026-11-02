@@ -24,6 +24,47 @@ namespace IotLinkLab
         private bool _monSplitSuppress;
         private bool _densityApplying;
         private int _fitDepth;          // 防「改列宽 → 滚动条变化 → 又触发改列宽」递归
+        private bool? _tight;           // 高度档位快照: 未跨断点时不重复写 Padding/RowStyle (null = 尚未布局过)
+
+        /// <summary>
+        /// 非当前页时为 true: 尺寸变化不再触发任何响应式重排。
+        /// WinForms 对不可见子控件依然会走 SetBounds → Resize, 隐藏页若照常重排,
+        /// 改窗口大小时三页各排一遍(实测分别 25~85ms)。切页时由 Form1 设置本标志。
+        /// </summary>
+        [System.ComponentModel.DesignerSerializationVisibility(System.ComponentModel.DesignerSerializationVisibility.Hidden)]
+        public bool LayoutSuspended { get; set; }
+
+        /// <summary>
+        /// 尺寸稳定后才做响应式重排: 拖拽窗口时 WM_SIZE 每帧涌入,
+        /// 逐帧重排 TableLayoutPanel 子树 + 重算列宽必然掉帧, 停手 120ms 后再收敛一次。
+        /// </summary>
+        private readonly System.Windows.Forms.Timer _resizeSettle = new() { Interval = 120 };
+
+        /// <summary>
+        /// 立刻按当前尺寸收敛一次, 并取消排队中的防抖重排(父窗体 Settle 会改本页尺寸
+        /// 从而再次触发本页 Resize, 不自销就会在 120ms 后把同一件事重做一遍)。
+        /// </summary>
+        public void SettleNow()
+        {
+            _resizeSettle.Stop();
+            if (IsDisposed || !IsHandleCreated || LayoutSuspended) return;
+            using var _d = Diag.T("Mon.Settle");
+            ApplyResponsive();
+            ApplyMonSplit();
+            if (_list != null && !_list.IsDisposed) FitColumns(_list);
+        }
+
+        /// <summary>
+        /// 请求在尺寸稳定后重排一次, 不阻塞调用方。
+        /// 切页时用它而不是立刻重排: 立刻整树重排要 60~100ms, 切页就会卡这么一下;
+        /// 推迟到下一个防抖窗口做, 视觉上只是列宽/内边距晚 120ms 到位, 切页本身立刻响应。
+        /// </summary>
+        public void RequestSettle()
+        {
+            _tight = null;          // 隐藏期间尺寸可能已变, 档位快照不可信
+            _resizeSettle.Stop();
+            _resizeSettle.Start();
+        }
 
         private readonly List<ListViewItem> _pending = new();
         private readonly Stopwatch _rateWatch = Stopwatch.StartNew();
@@ -98,22 +139,43 @@ namespace IotLinkLab
             _body.Controls.Add(_monSplit, 0, 1);
 
             Controls.Add(_body);
-            Resize += (s, e) => { ApplyResponsive(); ApplyMonSplit(); };
             ApplyResponsive();
             ApplyMonSplit();
+
+            // 拖拽中只记录, 不重排: 重排 + 重算列宽逐帧执行必然掉帧, 停手 120ms 后收敛一次。
+            _resizeSettle.Tick += (s, e) => SettleNow();
+            Resize += (s, e) =>
+            {
+                if (LayoutSuspended) return;
+                _resizeSettle.Stop();
+                _resizeSettle.Start();
+            };
+        }
+
+        protected override void Dispose(bool disposing)
+        {
+            if (disposing) _resizeSettle.Dispose();
+            base.Dispose(disposing);
         }
 
         private void ApplyResponsive()
         {
             if (_body == null || _body.IsDisposed || _densityApplying) return;
+            using var _d = Diag.T("Mon.ApplyResponsive");
             _densityApplying = true;
             try
             {
+                // Padding / RowStyle 每次写入都会让 TableLayoutPanel 与顶栏 Card 全量重排 + 重绘。
+                // 这两个值只随高度断点变化, 原实现每次 Resize 都新建一个 Padding 对象赋进去,
+                // 于是拖窗口的每一帧都在触发一轮布局 → 订阅监控台是三个页签里最容易掉帧的那个。
                 bool tight = Height < UiFit.S(560);
+                if (_tight == tight) return;
+                _tight = tight;
                 int h = UiFit.S(tight ? 44 : 48);
                 if ((int)_body.RowStyles[0].Height != h) _body.RowStyles[0].Height = h;
                 int padY = UiFit.S(tight ? 6 : 8);
-                _topCard.Padding = new Padding(UiFit.S(Theme.GapMd), padY, UiFit.S(Theme.GapMd), padY);
+                var padding = new Padding(UiFit.S(Theme.GapMd), padY, UiFit.S(Theme.GapMd), padY);
+                if (_topCard.Padding != padding) _topCard.Padding = padding;
             }
             finally { _densityApplying = false; }
         }
@@ -270,7 +332,6 @@ namespace IotLinkLab
             _list.Columns.Add("载荷预览");
             // 行高 24: 借 ImageList 的高度把 ListView 行撑开, 避免 18px 行高过密
             _list.SmallImageList = new ImageList { ImageSize = new Size(1, UiFit.S(24)), ColorDepth = ColorDepth.Depth24Bit };
-            _list.Resize += (s, e) => FitColumns(_list);
             _list.ClientSizeChanged += (s, e) => FitColumns(_list);   // 竖向滚动条出现/消失也会改变客户区宽度
 
             _list.SelectedIndexChanged += (s, e) =>

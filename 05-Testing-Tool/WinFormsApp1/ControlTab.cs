@@ -17,6 +17,46 @@ namespace IotLinkLab
         private Label _echoServo = null!, _echoMotor = null!, _echoMode = null!;
         private readonly ToolTip _tip = new();
         private bool _densityApplying;
+        private bool? _tight;            // 高度档位快照: 未跨断点时不重复写 Padding/Margin (null = 尚未布局)
+
+        /// <summary>
+        /// 非当前页时为 true: 尺寸变化不再触发任何响应式重排。
+        /// WinForms 对不可见子控件依然会走 SetBounds → Resize, 隐藏页若照常重排,
+        /// 改窗口大小时三页各排一遍(实测分别 25~85ms)。切页时由 Form1 设置本标志。
+        /// </summary>
+        [System.ComponentModel.DesignerSerializationVisibility(System.ComponentModel.DesignerSerializationVisibility.Hidden)]
+        public bool LayoutSuspended { get; set; }
+
+        /// <summary>
+        /// 尺寸稳定后才做响应式重排: 拖拽窗口时 WM_SIZE 每帧涌入,
+        /// 逐帧重排 TableLayoutPanel 子树必然掉帧, 停手 120ms 后再收敛一次。
+        /// </summary>
+        private readonly System.Windows.Forms.Timer _resizeSettle = new() { Interval = 120 };
+
+        /// <summary>
+        /// 立刻按当前尺寸收敛一次, 并取消排队中的防抖重排(父窗体 Settle 会改本页尺寸
+        /// 从而再次触发本页 Resize, 不自销就会在 120ms 后把同一件事重做一遍)。
+        /// </summary>
+        public void SettleNow()
+        {
+            _resizeSettle.Stop();
+            if (IsDisposed || !IsHandleCreated || LayoutSuspended) return;
+            using var _d = Diag.T("Ctl.Settle");
+            ApplyResponsive();
+            ReFitTopic();
+        }
+
+        /// <summary>
+        /// 请求在尺寸稳定后重排一次, 不阻塞调用方。
+        /// 切页时用它而不是立刻重排: 立刻整树重排要 60~100ms, 切页就会卡这么一下;
+        /// 推迟到下一个防抖窗口做, 切页本身立刻响应。
+        /// </summary>
+        public void RequestSettle()
+        {
+            _tight = null;          // 隐藏期间尺寸可能已变, 档位快照不可信
+            _resizeSettle.Stop();
+            _resizeSettle.Start();
+        }
 
         /// <summary>(topic, payload, qos1)——Form 层发布。</summary>
         public event Action<string, string, bool>? PublishRequested;
@@ -48,38 +88,63 @@ namespace IotLinkLab
             _layout.Controls.Add(BuildRight(), 1, 0);
             Controls.Add(_layout);
 
-            Resize += (s, e) => ApplyResponsive();
+            // 拖拽中只记录, 不重排: 停手 120ms 后按最终尺寸收敛一次。
+            _resizeSettle.Tick += (s, e) => SettleNow();
+            Resize += (s, e) =>
+            {
+                if (LayoutSuspended) return;
+                _resizeSettle.Stop();
+                _resizeSettle.Start();
+            };
+
             ApplyResponsive();
             UpdateTargetLabel();
+        }
+
+        protected override void Dispose(bool disposing)
+        {
+            if (disposing) _resizeSettle.Dispose();
+            base.Dispose(disposing);
         }
 
         private void ApplyResponsive()
         {
             if (_layout == null || _layout.IsDisposed || _densityApplying) return;
+            using var _d = Diag.T("Ctl.ApplyResponsive");
             _densityApplying = true;
             try
             {
                 float left = ClientSize.Width < UiFit.S(1120) ? 42f : 44f;
                 if (!_layout.ColumnStyles[0].Width.Equals(left)) _layout.ColumnStyles[0].Width = left;
 
+                // 只有跨过高度断点时才重写 Padding/Margin: 这两个赋值会触发整卡重排+重绘,
+                // 原实现每次 Resize 都判一次 _leftCard.Padding.Left, 判等虽便宜但一旦 DPI 换算
+                // 与当前 Padding 有亚像素偏差就会反复重建 Padding → 拖窗口掉帧。
                 bool tight = Height < UiFit.S(560);
-                int pad = UiFit.S(tight ? 12 : 16);
-                if (_leftCard.Padding.Left != pad)
+                if (_tight != tight)
                 {
+                    _tight = tight;
+                    int pad = UiFit.S(tight ? 12 : 16);
                     _leftCard.Padding = new Padding(pad);
                     _rightCard.Padding = new Padding(pad);
                     _leftCard.Margin = new Padding(0, 0, UiFit.S(tight ? 12 : 16), 0);
                 }
-                ReFitTopic();
             }
             finally { _densityApplying = false; }
         }
 
+        /// <summary>
+        /// 主题输入框宽度按样本文案实测。宽度与窗口尺寸无关, 只需在 DPI/字体就绪时算一次,
+        /// 不必挂在每次 Resize 上 —— 原来每次拖窗口都会 MeasureText 两次并写 Width。
+        /// </summary>
         private void ReFitTopic()
         {
-            if (_topicShell == null) return;
-            UiFit.FitTextBox(_topicInput, "green/control", padTotal: 32);
-            _topicShell.Width = _topicInput.Width + UiFit.S(16);
+            if (_topicShell == null || _topicShell.IsDisposed || _topicInput == null) return;
+            int textW = UiFit.TextWidth("green/control", _topicInput.Font);
+            int w = Math.Max(UiFit.Scale(_topicInput, 72), textW + UiFit.Scale(_topicInput, 8) + UiFit.Scale(_topicInput, 32));
+            if (_topicInput.Width != w) _topicInput.Width = w;
+            int shellW = w + UiFit.S(16);
+            if (_topicShell.Width != shellW) _topicShell.Width = shellW;
         }
 
         protected override void OnHandleCreated(EventArgs e)
