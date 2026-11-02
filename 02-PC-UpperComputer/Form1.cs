@@ -13,6 +13,7 @@ using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Forms;
+using System.Runtime.InteropServices;
 using MQTTnet;
 using MQTTnet.Client;
 
@@ -20,6 +21,10 @@ namespace DHT11
 {
     public partial class Form1 : Form
     {
+        // EM_SETCUEBANNER(0x1501): 在 TextBox 里显示灰色提示文字(获得焦点/输入后自动消失),
+        // 不占真实值 —— 用来替代原先写死的旧 IP 默认值。
+        [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+        private static extern IntPtr SendMessage(IntPtr hWnd, int msg, IntPtr wParam, string lParam);
         private SerialPort _serialPort;
         private List<double> _tempHistory = new List<double>();
         private List<double> _humHistory = new List<double>();
@@ -381,9 +386,13 @@ namespace DHT11
             {
                 Location = new Point(16, 99),
                 Width = 180,
-                Text = "192.168.184.221:1883",
+                // 不预填任何 IP: 此前写死的 192.168.184.221 本机根本不存在,
+                // 用户一启动就照着旧地址连, 报错却看不出地址是死的。
+                // 留空 + placeholder 提示, 让用户按 MQTT 启动器打印的「★ 物理
+                // 网卡」地址填写(手机/上位机要用能被访问到的那块网卡)。
                 Font = textBoxFont
             };
+            SendMessage(mqttBrokerTextBox.Handle, 0x1501, (IntPtr)1, "例如 192.168.46.46:1883");
 
             mqttTopicLabel = new Label
             {
