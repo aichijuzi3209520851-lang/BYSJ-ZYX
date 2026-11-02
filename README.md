@@ -24,7 +24,7 @@ PC 上位机通过串口解析后经 MQTT 上云，微信小程序订阅数据�
                        │  发布 green/control ▼
 ┌────────────────────────────────────────────┐
 │         EMQX MQTT Broker (5.0.26)          │
-│     MQTT:1883 · WS:8083 · 控制台:18200     │
+│     MQTT:1883 · WS:8083 · 控制台:18083     │
 └────────────────────────────────────────────┘
                        │  green/data (JSON,QoS1) ▲
                        │  green/control 透传 ▼
@@ -133,17 +133,19 @@ Temp:26C   Humi:60%RH   Soil:35%(raw=1200)  Light:72%  Servo:OFF Motor:OFF  Mode
 `03-EMQX-Server` 内的启动器可自动定位并启动 EMQX（默认路径 `D:\EMQX-MQTT\emqx-5.0.26-windows-amd64`，
 也识别 `D:\EMQX\emqx-*`；找不到时可在启动器同目录写 `emqx-path.txt` 指定 `bin` 路径）：
 
-- 双击 `MQTT.exe` → 启动并打开 Web 控制台（`http://localhost:18200`，admin/public）
+- 双击 `MQTT.exe` → 启动并打开 Web 控制台（`http://localhost:18083`，admin/public）
 - 命令行 `MQTT.exe status` / `MQTT.exe stop` → 查看状态 / 停止服务器
 
 > Dashboard 端口由 `etc/emqx.conf` 的 `dashboard.listeners.http.bind` 决定，启动器会自动读取。
-> EMQX 默认是 18083；**本机 18083 落在 Windows 保留端口区间（18027–18126）内无法绑定**，
-> 因此改用 18200。详见 [`03-EMQX-Server/README.md`](./03-EMQX-Server/README.md) 的「端口被 Windows 保留」一节。
+> 默认是 EMQX 官方的 **18083**。若某次启动报 `eacces` 无法绑定，说明该端口被 Windows 的
+> 端口排除区间占用了（区间由 Hyper-V 主机网络服务占据，每次开机重新随机分配），
+> 此时把配置临时改成别的端口（如 18200）即可。详见
+> [`03-EMQX-Server/README.md`](./03-EMQX-Server/README.md) 的「端口被 Windows 保留」一节。
 
 EMQX 发行包（52MB）已作为仓库 Release 附件提供：
 **[⬇️ emqx-5.0.26-windows-amd64.zip 一键下载](https://github.com/aichijuzi3209520851-lang/BYSJ-ZYX/releases/download/emqx-5.0.26/emqx-5.0.26-windows-amd64.zip)**
 （也可从 [EMQX 官网](https://www.emqx.io/zh/downloads) 下载 5.0.26 Windows amd64 版本）
-解压到 D 盘 1~2 级浅层目录（深路径会导致 Erlang 启动异常）。防火墙需放行 **1883 / 8083 / 18200** 端口。
+解压到 D 盘 1~2 级浅层目录（深路径会导致 Erlang 启动异常）。防火墙需放行 **1883 / 8083 / 18083** 端口。
 
 ### 3. 运行 PC 上位机
 

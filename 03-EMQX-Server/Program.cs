@@ -12,11 +12,14 @@ using System.Text;
 //        命令行参数 status = 只查询当前状态,不做任何变更
 // ============================================================
 
-// EMQX 默认 Web 控制台端口是 18083,但它落在 Windows 的"保留/排除端口区间"
-// (本机实测为 18027-18126)内,绑定会抛 eacces,所以实际端口必须从
-// etc/emqx.conf 里读,读不到才退回默认候选。
+// EMQX 默认 Web 控制台端口是 18083。但本机曾实测它能被 Windows 的
+// "保留/排除端口区间"(当时为 18027-18126)整段排除掉 —— 那段时间绑定会抛 eacces,
+// 因此 etc/emqx.conf 一度改成了 18200。该排除区间由 Hyper-V 主机网络服务占据,
+// 每次开机重新随机分配, 所以端口不能写死: 必须从 etc/emqx.conf 里读实际值,
+// 读不到才退回默认候选。
 const int DefaultDashboardPort = 18083;
 const int MqttPort = 1883;
+// 兜底候选: 仅在"读不到配置"且 18083 也不通时才尝试
 const int DashboardFallbackPort = 18200;
 
 // 运行期确定的实际值(定位到安装目录后会重新赋值)
@@ -86,7 +89,8 @@ if (mode is "stop")
 // ---------- 步骤 1:先定位目录,读出真实端口;再判端口,判断是否已在运行 ----------
 // 顺序很重要:以前是先找目录再判端口,一旦目录定位失败(例如安装路径变了),
 // 即便 EMQX 明明在运行也会报"找不到安装目录",体验很糟。
-// 另:必须先读配置拿到真实 dashboard 端口,否则 18200 在听也会被判成未启动。
+// 另:必须先读配置拿到真实 dashboard 端口,否则配置里改过端口(例如 18200)在听,
+// 也会因为只探 18083 而被判成未启动。
 string? binDir = FindEmqxBinDir();
 AdoptConfiguredPort(binDir);
 
@@ -355,7 +359,7 @@ static bool IsPortOpen(int port, int timeoutMs = 800)
 
 /// <summary>
 /// 把 DashboardPort 校正成"真正有人在听"的那个端口。
-/// 顺序:已解析值 → EMQX 默认 18083 → 本机备用 18200。
+/// 顺序:配置解析出的值 → EMQX 默认 18083 → 兜底 18200。
 /// </summary>
 bool ResolveLiveDashboardPort()
 {
@@ -373,9 +377,10 @@ bool IsEmqxUp() => IsPortOpen(MqttPort) || ResolveLiveDashboardPort();
 
 /// <summary>
 /// 从 EMQX 自己的配置文件里读出 dashboard 实际绑定端口。
-/// 【为什么必须读配置】EMQX 默认的 18083 落在这台机器的 Windows 保留端口区间
-/// (实测 18027-18126)内,绑定会抛 eacces;因此 etc/emqx.conf 已改成 18200。
-/// 启动器若写死探 18083,EMQX 明明起来了也会被判成"未就绪"并超时。
+/// 【为什么必须读配置】端口是可配置的, 且本机确实改过 —— 有一段时期 18083 被
+/// Windows 的端口排除区间(当时 18027-18126, 被 Hyper-V 主机网络服务占据)覆盖,
+/// 绑定抛 eacces, 于是 etc/emqx.conf 改成了 18200。启动器若写死探 18083,
+/// EMQX 明明起来了也会被判成"未就绪"并超时。
 /// cluster.hocon 是运行时改动的落地处,优先级高于 emqx.conf。
 /// </summary>
 static int? ReadDashboardPortFromConf(string binDir)

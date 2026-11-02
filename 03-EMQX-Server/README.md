@@ -14,7 +14,8 @@ EMQX 完整发行版已作为本仓库 Release 附件提供（52MB，免官网�
   ④ 扫描 C/D 盘 1~3 级目录找 `emqx*-windows*` / `emqx-<数字>*`
 - **自动读取实际配置的 Dashboard 端口**：解析 `etc/emqx.conf` 与 `data/configs/cluster.hocon` 里
   `dashboard.listeners.http.bind`，再依次探测「配置值 → 18083 → 18200」哪个真的在监听。
-  **不再硬编码 18083**——若本机把 Dashboard 改成 18200（见下方「端口被 Windows 保留」说明），启动器也能正确判定就绪
+  **不硬编码 18083**——端口是可配置的，本机就曾因端口被 Windows 排除区间占用而临时改过；
+  换台机器或改过配置时，启动器也能正确判定就绪
 - 后台执行 `emqx.cmd start`，轮询就绪状态最长 120 秒；超时会打印「已尝试探测的端口」便于排查
 - 就绪后自动打开浏览器，打印局域网访问地址与默认账号（admin / public）
 - 命令行子命令：`MQTT.exe status` 查看状态 / `MQTT.exe stop` 停止 EMQX
@@ -33,24 +34,37 @@ EMQX 完整发行版已作为本仓库 Release 附件提供（52MB，免官网�
 
 ### 端口被 Windows 保留导致 Dashboard 起不来
 
-若 EMQX 日志报 `eacces` 无法绑定 18083，先确认该端口是否落在 Windows 的 TCP 排除区间：
+Dashboard 使用 EMQX 官方默认端口 **18083**。但在本机曾出现过绑定失败：
+
+```
+[error] Failed to start Ranch listener 'http:dashboard' ... {port,18083} ... for reason eacces (permission denied)
+[error] msg: started_listener_failed ... port: 18083, reason: eacces
+[critical] msg: failed_to_start_app, app: emqx_dashboard
+```
+
+排查第一步，确认该端口是否落在 Windows 的 TCP 排除区间：
 
 ```powershell
 netsh int ipv4 show excludedportrange protocol=tcp
 ```
 
-本机实测该命令输出包含 **18027–18126**，18083 / 18084 都在其中，因此 `etc/emqx.conf` 改为：
+本机当时该命令输出包含 **18027–18126**，18083 / 18084 都在其中，所以改 18084 也一样失败。
+
+**根因**：这段排除区间由 Hyper-V 主机网络服务（`hns` / `vmcompute`）占据，**每次开机重新随机分配**。
+所以它不是永久的——本机后来重启就又空出来了。真正要记的不是「18083 不可用」，
+而是「18083 有概率被占，遇到时按下面的办法换端口」。
+
+临时换端口的做法（不必改代码）：
 
 ```
 dashboard {
     listeners.http {
-        ## 18083/18084 均落在本机 Windows 保留端口区间(18027-18126)内, 绑定报 EACCES, 本机改用 18200
         bind = 18200
     }
 }
 ```
 
-启动器会自动读到这个值并探测 18200，无需改代码。
+启动器会自动读到这个值并探测它，无需改代码。
 
 
 ## 部署 EMQX
@@ -68,12 +82,12 @@ dashboard {
 | --- | --- |
 | 1883 | MQTT over TCP —— PC 上位机连接 |
 | 8083 | MQTT over WebSocket —— 微信小程序连接 |
-| 18200 | EMQX Dashboard 网页管理（admin / public）。**默认 18083，本机因落在 Windows 保留区间而改为 18200**，以 `etc/emqx.conf` 的 `dashboard.listeners.http.bind` 为准 |
+| 18083 | EMQX Dashboard 网页管理（admin / public）。EMQX 官方默认端口；若被 Windows 端口排除区间占用可改，以 `etc/emqx.conf` 的 `dashboard.listeners.http.bind` 为准 |
 
-Windows 防火墙放行示例（管理员 PowerShell，端口按本机实际值替换）：
+Windows 防火墙放行示例（管理员 PowerShell）：
 
 ```powershell
-New-NetFirewallRule -DisplayName "EMQX-MQTT" -Direction Inbound -Protocol TCP -LocalPort 1883,8083,18200 -Action Allow
+New-NetFirewallRule -DisplayName "EMQX-MQTT" -Direction Inbound -Protocol TCP -LocalPort 1883,8083,18083 -Action Allow
 ```
 
 ## 本系统使用的主题
