@@ -130,8 +130,10 @@
 
       <view class="field">
         <text class="field-label">服务器地址</text>
-        <input class="field-input" type="text" placeholder="例如 192.168.36.221"
+        <input class="field-input" type="text" placeholder="电脑 Wi-Fi 的 IPv4 地址, 如 192.168.46.46"
           placeholder-class="field-placeholder" value="{{mqttHost}}" bindinput="onHostInput" />
+        <text class="field-hint" wx:if="{{hostHint}}">{{hostHint}}</text>
+        <text class="field-hint" wx:else>填电脑 Wi-Fi 网卡的地址。VMware/Hyper-V/Tailscale 的网段手机连不上, 模拟器却能连</text>
       </view>
 
       <view class="field">
@@ -142,8 +144,9 @@
 
       <view class="field">
         <text class="field-label">订阅主题</text>
-        <input class="field-input" type="text" placeholder="必填 · 与上位机发布主题一致(默认 green/data)"
+        <input class="field-input" type="text" placeholder="必填 · 与上位机发布主题一致(默认 {{dataTopicDefault}})"
           placeholder-class="field-placeholder" value="{{mqttTopic}}" bindinput="onTopicInput" />
+        <text class="field-hint">green/control 是指令下发通道, 订阅它收不到数据, 应填 {{dataTopicDefault}}</text>
       </view>
 
       <!-- 连接历史: 连接过一次即可在下次直接选用 -->

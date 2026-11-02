@@ -31,6 +31,102 @@
 const KEEP_ALIVE = 60            // MQTT keep-alive(秒)
 const PING_INTERVAL_MS = 30000   // PINGREQ 周期 = keep-alive/2
 
+/* ---------- 主题约定 ---------- */
+
+// 上行数据主题: 上位机/调试工具发布 JSON 传感器数据, 小程序订阅
+const DEFAULT_DATA_TOPIC = 'green/data'
+
+// 下行指令主题: 小程序发布纯文本指令('mode-1'/'DUOJ-1'/'MOTOR-1' 等), 上位机订阅
+// 这是纯文本控制通道, 不承载数据。小程序绝不能订阅它 —— 否则自己发出的每条指令
+// 都会被 EMQX 原样回送回来, 再被当成 JSON 解析, 刷出成片的
+// "Unexpected token 'm', \"mode-1\" is not valid JSON"。
+const CONTROL_TOPIC = 'green/control'
+
+// 判断某个主题是不是指令通道(它承载纯文本指令, 不能当数据主题订阅)
+function isControlTopic(topic) {
+  return String(topic || '').trim() === CONTROL_TOPIC
+}
+
+/* ---------- 服务器地址校验 ---------- */
+
+/**
+ * 判断一个地址是否"只在本机可用"——也就是只能被开发者工具的模拟器连上,
+ * 手机真机一定连不上。返回空串表示没发现问题, 返回非空串是需要提示用户的理由。
+ *
+ * 为什么需要这个: 模拟器跑在电脑上, 所以填任何本机网卡地址都能连(包括
+ * 127.0.0.1 和各种虚拟网卡)。于是很容易误以为"地址是对的", 到了手机上才发现
+ * 连不上。实测踩过的坑: 填 192.168.40.1(VMware VMnet8), 模拟器秒连,
+ * 手机连不上 —— 因为手机所在的热点里根本不存在这个网段。
+ *
+ * 判定依据是各虚拟化/隧道软件的默认网段(它们装完机几乎都落在这些段里):
+ *   - VMware  VMnet1 = 192.168.x.1 / VMnet8 = 192.168.x.1
+ *   - Hyper-V = 172.16~31.0.0/20 (Default Switch 常见 172.20.144.1)
+ *   - Tailscale = 100.64.0.0/10 (CGNAT 段)
+ *   - WSL2 = 172.x.x.1
+ * 只做提示不做拦截: 用户完全可能真的把 EMQX 装在某个虚拟网段上。
+ */
+function checkHostReachability(host) {
+  const h = String(host || '').trim()
+  if (!h) return '请填写电脑的局域网 IP 地址(手机需要能访问到它)'
+
+  if (h === '127.0.0.1' || h === 'localhost') {
+    return '127.0.0.1 / localhost 只在本机有效: 模拟器能连, 手机会连到手机自己。请填电脑的局域网 IP'
+  }
+
+  const m = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(h)
+  if (!m) {
+    // 不是 IPv4 字面量, 交给微信的域名校验, 这里不拦
+    return ''
+  }
+  const a = Number(m[1])
+  const b = Number(m[2])
+
+  // Tailscale / CGNAT 段
+  if (a === 100 && b >= 64 && b <= 127) {
+    return `${h} 看起来是 Tailscale 等组网工具的分段, 手机没装对应客户端时连不上`
+  }
+  // Hyper-V / WSL2 段
+  if (a === 172 && b >= 16 && b <= 31) {
+    return `${h} 属于 172.16~31 网段, 通常是 Hyper-V / WSL 的虚拟网卡; 手机不在这个网段里`
+  }
+  return ''
+}
+
+// 以 IPv4 形式给出"疑似虚拟网卡"的补充提示(仅用于界面说明, 不参与拦截)
+function describeVirtualHint(host) {
+  const h = String(host || '').trim()
+  const m = /^192\.168\.(\d{1,3})\.(\d{1,3})$/.exec(h)
+  if (!m) return ''
+  // VMware 默认把 VMnet1/VMnet8 放在 192.168.x.1, 宿主机侧地址末位恒为 1。
+  // 这不能当成结论, 只是提示用户核对一下: 真正的电脑 IP 末位很少正好是 1。
+  if (m[2] === '1') {
+    return `${h} 末位是 .1, 常见于 VMware / Hyper-V 虚拟网卡(宿主机侧地址), 请确认它是你电脑 Wi-Fi 网卡的地址`
+  }
+  return ''
+}
+
+/**
+ * 统一的地址风险判定。返回 { level, message }:
+ *   level = 'block'  确定连不上, 应该拦下来
+ *   level = 'warn'   高度可疑, 让用户确认后再放行
+ *   level = ''       没发现问题
+ *
+ * 为什么分两级: 「172.x / 100.64-127 / 127.0.0.1」这些网段手机一定到不了, 属于硬错;
+ * 而「192.168.x.1」只是常见于虚拟网卡, 用户完全可能给电脑配了静态 .1 地址,
+ * 硬拦会误伤 —— 必须让用户自己确认。
+ *
+ * 两级都要在保存流程里真的用上。历史上只把 'block' 接进保存流程, 结果本机真正
+ * 出问题的那两个地址(192.168.40.1 VMnet8 / 192.168.198.1 VMnet1)恰好都落在
+ * 'warn' 档, 于是"保存时什么都没提示", 等于没修。这是被单元测试抓出来的。
+ */
+function describeHostRisk(host) {
+  const blocked = checkHostReachability(host)
+  if (blocked) return { level: 'block', message: blocked }
+  const warned = describeVirtualHint(host)
+  if (warned) return { level: 'warn', message: warned }
+  return { level: '', message: '' }
+}
+
 /* ---------- 编码工具 ---------- */
 
 // 字符串 → UTF-8 字节数组(控制指令虽为 ASCII, 仍按标准编码保证通用性)
@@ -248,6 +344,12 @@ function createMqttClient(opts) {
           // 稍作等待再订阅, 与原实现节奏一致
           setTimeout(() => {
             (opts.topics || []).forEach((topic) => {
+              // 指令主题是纯文本控制通道, 订阅它只会把自己发出的指令原样收回来,
+              // 再当 JSON 解析就刷 "Unexpected token" 报错 —— 直接跳过并给出提示。
+              if (isControlTopic(topic)) {
+                log('warn', `主题 ${topic} 是指令通道(纯文本控制), 不能作为数据主题订阅, 已跳过`)
+                return
+              }
               nextPacketId()
               sendBytes(buildSubscribe(topic))
             })
@@ -350,4 +452,12 @@ function createMqttClient(opts) {
   }
 }
 
-module.exports = { createMqttClient }
+module.exports = {
+  createMqttClient,
+  DEFAULT_DATA_TOPIC,
+  CONTROL_TOPIC,
+  isControlTopic,
+  checkHostReachability,
+  describeVirtualHint,
+  describeHostRisk
+}

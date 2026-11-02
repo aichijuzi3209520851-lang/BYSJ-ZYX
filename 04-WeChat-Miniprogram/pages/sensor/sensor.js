@@ -1,7 +1,14 @@
 // pages/sensor/sensor.js
 // 传感器数据页: 通过共享 MQTT 模块(utils/mqtt.js)订阅上位机发布的 JSON 数据
 // 页面职责: 连接配置/历史管理 + 阈值判定展示 + 报警提醒
-const { createMqttClient } = require('../../utils/mqtt')
+const {
+  createMqttClient,
+  DEFAULT_DATA_TOPIC,
+  isControlTopic,
+  checkHostReachability,
+  describeVirtualHint,
+  describeHostRisk
+} = require('../../utils/mqtt')
 const { guardLogin } = require('../../utils/auth')
 
 /* 统一报警阈值: 与 STM32 固件(ALARM_*_MAX) / PC 上位机保持完全一致 */
@@ -19,9 +26,11 @@ Page({
     mqttConnected: false,
     connecting: false,
     showConfig: false,
-    mqttHost: '192.168.36.221',
+    mqttHost: '',
     mqttPort: '8083',
+    hostHint: '',         // 地址填写提示(虚拟网卡 / 只在本机可用等)
     mqttTopic: '',        // 默认留空, 强制用户手动输入(任务要求)
+    dataTopicDefault: DEFAULT_DATA_TOPIC,   // 界面上做占位与提示, 避免用户填成指令主题
     history: [],          // 成功连接过的 {host, port, topic} 历史记录
     sensorData: {
       temperature: null,
@@ -65,9 +74,16 @@ Page({
       const host = wx.getStorageSync('mqtt_host')
       const port = wx.getStorageSync('mqtt_port')
       const topic = wx.getStorageSync('mqtt_topic')
-      if (host) this.setData({ mqttHost: host })
+      if (host) this.setData({ mqttHost: host, hostHint: checkHostReachability(host) || describeVirtualHint(host) })
       if (port) this.setData({ mqttPort: port })
-      if (topic) this.setData({ mqttTopic: topic })  // 历史上填过才回填, 否则保持空白
+      // 历史配置里可能残留被误填成指令主题的数据主题(green/control),
+      // 丢弃不用, 否则一进页面就会订阅自己的指令通道并刷解析报错。
+      // 顺手从本地存储里清掉, 免得下次启动又被读回来。
+      if (topic && isControlTopic(topic)) {
+        try { wx.removeStorageSync('mqtt_topic') } catch (e) { console.error('清除错误主题失败:', e) }
+      } else if (topic) {
+        this.setData({ mqttTopic: topic })
+      }
     } catch (error) {
       console.error('加载配置失败:', error)
     }
@@ -102,11 +118,16 @@ Page({
   onHistoryTap(e) {
     const item = e.currentTarget.dataset.item
     if (!item) return
+    const topic = isControlTopic(item.topic) ? '' : item.topic
     this.setData({
       mqttHost: item.host,
       mqttPort: item.port,
-      mqttTopic: item.topic
+      mqttTopic: topic
     })
+    if (!topic) {
+      wx.showToast({ title: '该历史用的是指令主题, 请改填数据主题', icon: 'none' })
+      return
+    }
     wx.showToast({ title: '已填入所选配置', icon: 'none' })
   },
 
@@ -134,7 +155,12 @@ Page({
 
   stopPropagation() {},
 
-  onHostInput(e) { this.setData({ mqttHost: e.detail.value }) },
+  onHostInput(e) {
+    const value = e.detail.value
+    // 边输入边提示: 虚拟网卡地址在模拟器里是"能连"的, 到手机上才失败,
+    // 所以必须在填的时候就提醒, 而不是等连不上再猜。
+    this.setData({ mqttHost: value, hostHint: checkHostReachability(value) || describeVirtualHint(value) })
+  },
   onPortInput(e) { this.setData({ mqttPort: e.detail.value }) },
   onTopicInput(e) { this.setData({ mqttTopic: e.detail.value }) },
 
@@ -146,9 +172,56 @@ Page({
       wx.showToast({ title: '请填写服务器地址和端口', icon: 'none' })
       return
     }
-    // 订阅主题必须由用户显式输入(默认空白, 不再内置 LCW2)
+    // 地址只在本机可达时给出明确提示 —— 这类地址在开发者工具模拟器里能连,
+    // 到真机上必然失败, 不提示的话用户会以为是服务器或防火墙的问题。
+    //
+    // 分两级:
+    //   block(172.x / 100.64-127 / 127.0.0.1) —— 手机一定到不了, 直接拦下
+    //   warn (192.168.x.1 末位是 1)          —— 常见于虚拟网卡, 但用户可能真配了静态 .1,
+    //                                          让他确认后放行
+    // 两级都必须接进保存流程。早期版本只接 block, 而本机真正出事的那两个地址
+    // (192.168.40.1 / 192.168.198.1)恰好都落在 warn 档, 于是保存时什么都不提示。
+    const hostRisk = describeHostRisk(mqttHost)
+    if (hostRisk.level === 'block') {
+      wx.showModal({
+        title: '这个地址手机连不上',
+        content: hostRisk.message,
+        showCancel: false,
+        confirmText: '知道了'
+      })
+      return
+    }
+    if (hostRisk.level === 'warn') {
+      wx.showModal({
+        title: '确认这个地址吗',
+        content: hostRisk.message,
+        confirmText: '仍然使用',
+        cancelText: '改一下',
+        success: (res) => { if (res.confirm) this._saveAndConnect() }
+      })
+      return
+    }
+
+    this._saveAndConnect()
+  },
+
+  // 真正落地保存并连接(校验通过后调用)
+  _saveAndConnect() {
+    const { mqttHost, mqttPort, mqttTopic } = this.data
+
+    // 订阅主题必须由用户显式输入(默认空白)
     if (!mqttTopic.trim()) {
       wx.showToast({ title: '请输入订阅主题(需与上位机发布主题一致)', icon: 'none' })
+      return
+    }
+    // green/control 是指令下发通道(纯文本), 订阅它收不到可解析的数据
+    if (isControlTopic(mqttTopic)) {
+      wx.showModal({
+        title: '主题填错了',
+        content: `green/control 是下发指令的通道, 不能当数据主题订阅。数据主题应填 ${DEFAULT_DATA_TOPIC}。`,
+        showCancel: false,
+        confirmText: '知道了'
+      })
       return
     }
 
@@ -241,11 +314,16 @@ Page({
 
   // 解析 green/data 的 JSON 载荷并更新界面
   handleSensorJson(text) {
+    // 指令通道的纯文本指令(mode-1/DUOJ-1/MOTOR-1)不是 JSON, 静默忽略。
+    // 正常链路下已经订阅不到指令主题, 这里只是最后一道防线。
+    const raw = String(text == null ? '' : text).trim()
+    if (!raw.startsWith('{')) return
+
     let jsonData
     try {
-      jsonData = JSON.parse(text)
+      jsonData = JSON.parse(raw)
     } catch (error) {
-      console.error('✗ JSON解析失败:', error, text)
+      console.error('✗ JSON解析失败:', error, raw)
       return
     }
 

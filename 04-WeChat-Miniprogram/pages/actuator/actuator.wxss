@@ -378,6 +378,14 @@
   color: var(--ink-tertiary);
 }
 
+/* 字段下方的说明文字(如"数据主题不能填指令主题") */
+.field-hint {
+  margin-top: 10rpx;
+  font-size: 24rpx;
+  line-height: 1.5;
+  color: var(--ink-tertiary);
+}
+
 /* 只读字段(指令主题) */
 .field-static {
   min-height: 88rpx;

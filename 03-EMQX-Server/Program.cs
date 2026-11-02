@@ -517,12 +517,42 @@ void OpenDashboard()
             Msg($"  浏览器打开失败,请手动访问:http://127.0.0.1:{DashboardPort}", ConsoleColor.Yellow);
         }
 
-        List<IPAddress> ips = GetLanIPv4Addresses();
-        if (ips.Count > 0)
+        // 只列出「手机能真正连上」的地址。
+        // 以前这里把所有 Up 状态的网卡全列出来了, 于是 VMware VMnet8(192.168.40.1)、
+        // Hyper-V vEthernet(172.20.144.1)、Tailscale(100.86.134.42) 都被当成
+        // "局域网访问地址"打印。它们是宿主机上的虚拟网卡: 本机自己连自己是通的
+        // (所以微信开发者工具的模拟器填这些地址能连), 但手机所在的热点/局域网里
+        // 根本不存在这些网段, 抄过去必然连不上 —— 这正是"模拟器能连、真机连不上"的由来。
+        List<LanAddress> lanAddrs = GetLanIPv4Addresses();
+        if (lanAddrs.Count > 0)
         {
-            Msg("  局域网访问地址(供手机 / STM32 开发板等设备使用):", ConsoleColor.Cyan);
-            foreach (IPAddress ip in ips)
-                Msg($"    http://{ip}:{DashboardPort}", ConsoleColor.Cyan);
+            Msg("  局域网访问地址(手机 / STM32 开发板用):", ConsoleColor.Cyan);
+            foreach (LanAddress a in lanAddrs)
+            {
+                if (a.Preferred)
+                {
+                    Msg($"   ★ {a.Nic}  —— 手机就用这个", ConsoleColor.Cyan);
+                    Msg($"       控制台   http://{a.Ip}:{DashboardPort}", ConsoleColor.Cyan);
+                    Msg($"       小程序   服务器地址填 {a.Ip}    端口 8083", ConsoleColor.Cyan);
+                    Msg($"       上位机   {a.Ip}:{MqttPort}", ConsoleColor.Cyan);
+                }
+                else
+                {
+                    // 虚拟网卡: 本机连自己是通的(所以模拟器填它能连),
+                    // 但手机所在的热点/局域网里没有这个网段, 抄进手机必然失败。
+                    // 明确标注"勿用于手机", 避免再次误用 —— 这正是真机连不上的根因。
+                    Msg($"     {a.Nic}  —— 虚拟网卡, 手机连不上, 勿用", ConsoleColor.DarkGray);
+                    Msg($"       http://{a.Ip}:{DashboardPort}", ConsoleColor.DarkGray);
+                }
+            }
+            Msg("  说明: ★ 是有默认网关的物理网卡(本机正在用的 Wi-Fi / 网线),", ConsoleColor.DarkGray);
+            Msg("        手机真机调试只能填它的地址; 其余 VMware / Hyper-V / Tailscale", ConsoleColor.DarkGray);
+            Msg("        是虚拟网卡, 只有本机的开发者工具模拟器能连, 手机连不上。", ConsoleColor.DarkGray);
+        }
+        else
+        {
+            Msg("  ⚠ 没找到可用的局域网地址: 本机似乎没有连上 Wi-Fi / 网线。", ConsoleColor.Yellow);
+            Msg("    手机真机调试必须让手机和本机处在同一个 Wi-Fi 或手机热点下。", ConsoleColor.Yellow);
         }
     }
     else
@@ -536,21 +566,58 @@ void OpenDashboard()
     Msg("  小技巧:命令行运行 MQTT.exe stop 可停止服务器,status 查看状态。", ConsoleColor.DarkGray);
 }
 
-/// <summary>枚举本机所有在线网卡上的 IPv4 地址(用于局域网访问)</summary>
-List<IPAddress> GetLanIPv4Addresses()
+/// <summary>
+/// 枚举本机可被「其它设备」访问的 IPv4 地址, 物理网卡排在前面。
+///
+/// 关键: 必须把虚拟网卡挑出来单独降级, 不能一视同仁地全部打印。
+/// 本机实测同时存在 —— VMware VMnet1(192.168.198.1) / VMnet8(192.168.40.1) /
+/// Hyper-V vEthernet(172.20.144.1) / Tailscale(100.86.134.42) / WLAN(192.168.46.46)。
+/// 前四个都是宿主机上的虚拟网卡: 本机自己连自己是通的(所以模拟器填它们能连上),
+/// 但手机所在的热点或局域网里并不存在这些网段, 填进手机必然连不上。
+/// 这正是"开发者工具模拟器能连、真机连不上"的根因, 所以这里按「是否有默认网关」
+/// 把物理网卡判为 Preferred, 并在输出里明确标星, 引导用户抄那个地址。
+/// </summary>
+List<LanAddress> GetLanIPv4Addresses()
 {
-    var result = new List<IPAddress>();
+    var result = new List<LanAddress>();
     foreach (NetworkInterface nic in NetworkInterface.GetAllNetworkInterfaces())
     {
         if (nic.OperationalStatus != OperationalStatus.Up)
             continue;
         if (nic.NetworkInterfaceType == NetworkInterfaceType.Loopback)
             continue;
-        foreach (UnicastIPAddressInformation addr in nic.GetIPProperties().UnicastAddresses)
+
+        IPInterfaceProperties props = nic.GetIPProperties();
+
+        // 有默认网关 = 这块网卡承载着"出网"的路由, 只有这种网卡上的地址
+        // 才可能是同一局域网内其它设备(手机)能路由到的地址。
+        bool hasGateway = props.GatewayAddresses.Any(g =>
+            g.Address != null &&
+            g.Address.AddressFamily == AddressFamily.InterNetwork &&
+            !g.Address.Equals(IPAddress.Any));
+
+        foreach (UnicastIPAddressInformation addr in props.UnicastAddresses)
         {
-            if (addr.Address.AddressFamily == AddressFamily.InterNetwork)
-                result.Add(addr.Address);
+            if (addr.Address.AddressFamily != AddressFamily.InterNetwork)
+                continue;
+            // 169.254.x.x 是 APIPA 自动私有地址, 说明 DHCP 没拿到地址, 连不通别人
+            if (addr.Address.ToString().StartsWith("169.254.", StringComparison.Ordinal))
+                continue;
+            result.Add(new LanAddress(addr.Address.ToString(), nic.Name, hasGateway));
         }
     }
-    return result;
+    // 物理网卡在前; 同类内保持系统枚举顺序, 便于用户对照 ipconfig
+    return result.OrderByDescending(a => a.Preferred).ToList();
 }
+
+/// <summary>
+/// 一个可供局域网内其它设备(手机 / STM32 开发板)访问的本机地址。
+/// </summary>
+/// <param name="Ip">IPv4 地址</param>
+/// <param name="Nic">网卡名称(给用户看, 便于对照 ipconfig 确认是哪块网卡)</param>
+/// <param name="Preferred">
+/// 是否为物理网卡(该网卡有默认网关)。手机真机调试应当只抄这个地址:
+/// 虚拟网卡(VMware / Hyper-V / Tailscale)上的地址在本机连自己是通的,
+/// 但手机所在的局域网里不存在那些网段, 填进去必然连不上。
+/// </param>
+record LanAddress(string Ip, string Nic, bool Preferred);

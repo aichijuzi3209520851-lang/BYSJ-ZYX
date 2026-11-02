@@ -371,6 +371,14 @@
   color: var(--ink-tertiary);
 }
 
+/* 字段下方的说明文字(如"订阅主题不能填指令主题") */
+.field-hint {
+  margin-top: 10rpx;
+  font-size: 24rpx;
+  line-height: 1.5;
+  color: var(--ink-tertiary);
+}
+
 /* ---------- 连接历史 ---------- */
 .history {
   margin: 8rpx 0 28rpx;

@@ -81,6 +81,16 @@ ipconfig
 
 **注意**: 不要使用 `127.0.0.1` 或 `localhost`，必须使用实际的局域网IP地址（如 192.168.x.x）
 
+**⚠ 更常见的坑：填了虚拟网卡地址。** 本机装过 VMware / Hyper-V / Tailscale / WSL 的话，`ipconfig` 会列出好几块虚拟网卡（例如 `192.168.40.1`、`172.20.144.1`、`100.86.134.42`）。这些地址只有本机的开发者工具模拟器能连，**手机一定连不上** —— 这正好表现为"模拟器能连、真机连不上"。
+
+判据：**看「默认网关」这一项，非空的才是真正连在热点上的网卡。**
+
+```powershell
+Get-NetIPConfiguration | ForEach-Object { $_.InterfaceAlias + '  ' + $_.IPv4Address.IPAddress + '  网关=' + $_.IPv4DefaultGateway.NextHop }
+```
+
+（网关为空的一律跳过。EMQX 启动器打印地址列表时也会用 `★` 标出该填哪个。）
+
 ### 5. 测试MQTT连接
 
 #### 5.1 使用MQTTX客户端测试
